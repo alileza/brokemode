@@ -261,11 +261,17 @@
   <section class="tight" id="release">
     <div class="section-head">
       <div class="kicker">Build &amp; release</div>
-      <h2>Tag it, ship one file.</h2>
-      <p>make build runs the Vite build, then a static go build that embeds web/dist, the registry, and the prompts — so serve needs no node_modules at runtime, and a release asset is one file.</p>
+      <h2>Merge it, ship one file.</h2>
+      <p>make build runs the Vite build, then a static go build that embeds web/dist, the registry, and the prompts — so serve needs no node_modules at runtime, and a release asset is one file. Versions bump themselves.</p>
     </div>
-    <div class="quickstart"><span class="prompt">$</span> git tag v0.1.0 && git push origin v0.1.0
-<span class="comment"># → GitHub Actions: dashboard build, tests, then
+    <div class="quickstart"><span class="comment"># every code push to main → automatic PATCH release (vX.Y.Z+1)
+# docs/markdown/workflow-only changes don't release</span>
+<span class="prompt">$</span> git push origin main
+
+<span class="comment"># minor or major: run the release workflow and pick the bump
+# (Actions → release → Run workflow → bump: minor | major)</span>
+
+<span class="comment"># each release: dashboard build, tests, then
 #   brokemode-{darwin,linux}-{arm64,amd64} + sha256 checksums.
 #   install.sh downloads exactly the one matching the machine.</span></div>
   </section>

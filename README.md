@@ -225,13 +225,17 @@ make lint      # golangci-lint + eslint + prettier
 make verify    # curl smoke test against a running gateway
 ```
 
-**Releasing:** push a tag (`git tag v0.1.0 && git push origin v0.1.0`) and
-`.github/workflows/release.yml` builds the dashboard, runs the tests, and
-publishes `brokemode-{darwin,linux}-{arm64,amd64}` binaries plus
-`checksums.txt` to the GitHub release — each one self-contained, which is
-what lets install.sh download exactly one file. CI
-(`.github/workflows/ci.yml`) runs lint, tests, and a darwin/arm64
-cross-compile on every push and PR.
+**Releasing:** versions bump themselves. Every code push to `main` cuts a
+**patch** release automatically (docs/markdown/workflow-only changes
+don't); to bump **minor** or **major**, run the `release` workflow from
+the Actions tab and pick the bump size — it defaults to patch. The
+workflow computes the next semver from the latest `v*` tag, builds the
+dashboard, runs the tests, then publishes
+`brokemode-{darwin,linux}-{arm64,amd64}` binaries plus `checksums.txt` to
+a GitHub release — each one self-contained, which is what lets install.sh
+download exactly one file. A commit that's already tagged is skipped, so
+re-runs are safe. CI (`.github/workflows/ci.yml`) runs lint, tests, and a
+darwin/arm64 cross-compile on every push and PR.
 
 Working on a fork? The installer honors `BROKEMODE_REPO` and
 `BROKEMODE_RELEASE_BASE` overrides, which is also how its download path is

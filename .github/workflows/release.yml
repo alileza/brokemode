@@ -1,25 +1,75 @@
 name: release
 
 on:
+  # Every code push to main cuts a patch release automatically. Docs and
+  # workflow-only changes don't release.
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - "LICENSE"
+      - ".github/**"
+      - "monitor/**"
+  # Manual run to pick the bump size (defaults to patch).
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Semver bump for this release"
+        type: choice
+        default: patch
+        options: [patch, minor, major]
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute next version
+        id: ver
+        env:
+          BUMP: ${{ inputs.bump || 'patch' }}
+        run: |
+          set -euo pipefail
+          if [ -n "$(git tag --points-at HEAD -l 'v*')" ]; then
+            echo "HEAD is already released as $(git tag --points-at HEAD -l 'v*' | head -1); skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          latest="$(git tag -l 'v*' --sort=-v:refname | head -1)"
+          latest="${latest:-v0.0.0}"
+          IFS=. read -r MA MI PA <<< "${latest#v}"
+          case "$BUMP" in
+            major) MA=$((MA+1)); MI=0; PA=0 ;;
+            minor) MI=$((MI+1)); PA=0 ;;
+            patch) PA=$((PA+1)) ;;
+            *) echo "unknown bump '$BUMP'"; exit 1 ;;
+          esac
+          next="v${MA}.${MI}.${PA}"
+          echo "previous: $latest -> next: $next ($BUMP)"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v4
+        if: steps.ver.outputs.skip == 'false'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
 
       - uses: actions/setup-go@v5
+        if: steps.ver.outputs.skip == 'false'
         with:
           go-version-file: go.mod
           cache: true
@@ -28,24 +78,32 @@ jobs:
       # binary — release assets are fully self-contained (registry, web
       # UI, and bench prompts included).
       - name: Build dashboard
+        if: steps.ver.outputs.skip == 'false'
         run: cd web && npm ci && npm run build
 
       - name: Test
+        if: steps.ver.outputs.skip == 'false'
         run: go test ./cmd/... ./internal/... ./bench/...
 
       - name: Build binaries
+        if: steps.ver.outputs.skip == 'false'
+        env:
+          VERSION: ${{ steps.ver.outputs.next }}
         run: |
           mkdir -p dist
           for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
             GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 \
               go build -trimpath \
-                -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+                -ldflags "-s -w -X main.version=${VERSION}" \
                 -o "dist/brokemode-${target%/*}-${target#*/}" ./cmd/brokemode
           done
           cd dist && sha256sum brokemode-* > checksums.txt
 
+      # Creates the tag at this commit and publishes the release with it.
       - name: Publish release
+        if: steps.ver.outputs.skip == 'false'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.ver.outputs.next }}
           files: dist/*
           generate_release_notes: true
