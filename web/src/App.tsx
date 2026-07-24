@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import BudgetGauge from './components/BudgetGauge';
 import HostStrip from './components/HostStrip';
 import RequestsTable from './components/RequestsTable';
@@ -9,15 +9,19 @@ const HISTORY = 120; // seconds of sparkline history
 
 type Conn = 'connecting' | 'live' | 'lost';
 
+const connBadge: Record<Conn, { text: string; cls: string }> = {
+  connecting: { text: 'connecting…', cls: 'eyebrow live' },
+  live: { text: 'live', cls: 'eyebrow live' },
+  lost: { text: 'reconnecting', cls: 'eyebrow lost' },
+};
+
 export default function App() {
   const [payload, setPayload] = useState<StreamPayload | null>(null);
   const [conn, setConn] = useState<Conn>('connecting');
   const [tpsHistory, setTpsHistory] = useState<number[]>([]);
-  const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     const es = new EventSource('/api/stream');
-    esRef.current = es;
     es.addEventListener('telemetry', (ev: MessageEvent<string>) => {
       const data: StreamPayload = JSON.parse(ev.data) as StreamPayload;
       setPayload(data);
@@ -32,73 +36,101 @@ export default function App() {
     };
   }, []);
 
-  const connBadge: Record<Conn, { text: string; cls: string }> = {
-    connecting: { text: 'connecting…', cls: 'text-slate-400' },
-    live: { text: '● live', cls: 'text-emerald-500' },
-    lost: { text: '○ reconnecting', cls: 'text-amber-500' },
-  };
-
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
-      <header className="mb-6 flex items-baseline justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100">brokemode</h1>
-          <p className="text-sm text-slate-500">local LLMs on Apple Silicon — zero token cost</p>
+    <div className="min-h-screen">
+      <header className="nav flex items-center gap-5 px-8 py-3.5">
+        <div className="flex items-center gap-2.5">
+          <span className="brand-mark">b</span>
+          <span className="text-[17px] font-bold tracking-tight">brokemode</span>
         </div>
-        <span className={`text-sm ${connBadge[conn].cls}`}>{connBadge[conn].text}</span>
+        <span className="ml-auto flex items-center gap-3">
+          <span className={connBadge[conn].cls}>
+            <span className="dot" />
+            {connBadge[conn].text}
+          </span>
+          <a
+            href="https://github.com/alileza/brokemode"
+            className="rounded-lg bg-[var(--content-primary)] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#1f2630]"
+          >
+            GitHub →
+          </a>
+        </span>
       </header>
 
-      {payload === null ? (
-        <p className="py-24 text-center text-slate-500">waiting for /api/stream…</p>
-      ) : (
-        <div className="space-y-4">
-          <section className="rounded-xl border border-slate-800 bg-slate-950/40 p-5">
-            <div className="mb-2 flex items-baseline justify-between">
-              <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
-                Decode rate
-              </h2>
-              <span className="text-3xl font-semibold tabular-nums text-slate-100">
-                {payload.decode_tps.toFixed(1)}
-                <span className="ml-1 text-sm font-normal text-slate-400">tok/s</span>
-              </span>
-            </div>
-            <Sparkline values={tpsHistory} unit="tok/s" />
-          </section>
+      <main className="mx-auto max-w-[1100px] px-8 py-10">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold tracking-tight">Local LLM dashboard</h1>
+          <p className="mt-1 text-[15px] text-[var(--content-secondary)]">
+            Live decode rate, memory budget, and host telemetry — zero token cost.
+          </p>
+        </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <section className="rounded-xl border border-slate-800 bg-slate-950/40 p-5">
-              <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">
-                Memory budget
-              </h2>
-              <BudgetGauge
-                usedBytes={payload.telemetry.ollama_rss_bytes}
-                budgetGB={payload.budget_gb}
-              />
-            </section>
-            <section className="rounded-xl border border-slate-800 bg-slate-950/40 p-5">
-              <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">
-                Last request
-              </h2>
-              <div className="text-3xl font-semibold tabular-nums text-slate-100">
-                {payload.ttft_ms > 0 ? `${payload.ttft_ms.toFixed(0)} ms` : '—'}
-                <span className="ml-1 text-sm font-normal text-slate-400">TTFT</span>
+        {payload === null ? (
+          <p className="py-24 text-center text-[var(--content-secondary)]">
+            waiting for /api/stream…
+          </p>
+        ) : (
+          <div className="space-y-4">
+            <section className="card">
+              <div className="mb-3 flex items-baseline justify-between">
+                <h2 className="kicker">Decode rate</h2>
+                <span className="text-3xl font-bold tracking-tight tabular-nums">
+                  {payload.decode_tps.toFixed(1)}
+                  <span className="ml-1 text-sm font-normal text-[var(--content-secondary)]">
+                    tok/s
+                  </span>
+                </span>
               </div>
-              <p className="mt-1 text-xs text-slate-500">
-                time to first token, most recent gateway request
-              </p>
+              <Sparkline values={tpsHistory} unit="tok/s" />
+            </section>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <section className="card">
+                <h2 className="kicker mb-4">Memory budget</h2>
+                <BudgetGauge
+                  usedBytes={payload.telemetry.ollama_rss_bytes}
+                  budgetGB={payload.budget_gb}
+                />
+              </section>
+              <section className="card">
+                <h2 className="kicker mb-4">Last request</h2>
+                <div className="text-3xl font-bold tracking-tight tabular-nums">
+                  {payload.ttft_ms > 0 ? `${payload.ttft_ms.toFixed(0)} ms` : '—'}
+                  <span className="ml-1 text-sm font-normal text-[var(--content-secondary)]">
+                    TTFT
+                  </span>
+                </div>
+                <p className="mt-1 text-[13px] text-[var(--content-secondary)]">
+                  time to first token, most recent gateway request
+                </p>
+              </section>
+            </div>
+
+            <HostStrip telemetry={payload.telemetry} />
+
+            <section className="card">
+              <h2 className="kicker mb-4">Recent gateway requests</h2>
+              <RequestsTable requests={payload.recent ?? []} />
             </section>
           </div>
+        )}
+      </main>
 
-          <HostStrip telemetry={payload.telemetry} />
-
-          <section className="rounded-xl border border-slate-800 bg-slate-950/40 p-5">
-            <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">
-              Recent gateway requests
-            </h2>
-            <RequestsTable requests={payload.recent ?? []} />
-          </section>
+      <footer className="mt-8 border-t border-[var(--border-primary)] bg-[var(--surface-secondary)] px-8 py-6">
+        <div className="mx-auto flex max-w-[1100px] items-center gap-6 text-[13px] text-[var(--content-secondary)]">
+          <span>brokemode — MIT-licensed open source</span>
+          <span className="grow" />
+          <a className="hover:text-[var(--content-primary)]" href="/metrics">
+            /metrics
+          </a>
+          <a
+            className="hover:text-[var(--content-primary)]"
+            href="https://github.com/alileza/brokemode"
+          >
+            GitHub
+          </a>
         </div>
-      )}
+      </footer>
     </div>
   );
 }

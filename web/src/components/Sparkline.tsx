@@ -13,7 +13,7 @@ export default function Sparkline({
   values,
   width = 560,
   height = 96,
-  stroke = '#3b82f6',
+  stroke = '#0057ff',
   unit,
 }: SparklineProps) {
   const id = useId();
@@ -48,7 +48,7 @@ export default function Sparkline({
     >
       <defs>
         <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={stroke} stopOpacity="0.25" />
+          <stop offset="0%" stopColor={stroke} stopOpacity="0.18" />
           <stop offset="100%" stopColor={stroke} stopOpacity="0" />
         </linearGradient>
       </defs>
@@ -68,7 +68,7 @@ export default function Sparkline({
             y1={pad}
             x2={x(hoverIndex)}
             y2={height - pad}
-            stroke="#475569"
+            stroke="#9ca4ad"
             strokeWidth="1"
           />
           <circle
@@ -76,14 +76,15 @@ export default function Sparkline({
             cy={y(hoverValue)}
             r="4"
             fill={stroke}
-            stroke="#0f172a"
+            stroke="#ffffff"
             strokeWidth="2"
           />
           <text
             x={x(hoverIndex) + (hoverIndex > values.length / 2 ? -8 : 8)}
             y={pad + 12}
             textAnchor={hoverIndex > values.length / 2 ? 'end' : 'start'}
-            className="fill-slate-300 text-[11px]"
+            fill="#0a0d12"
+            fontSize="11"
           >
             {hoverValue.toFixed(1)} {unit}
           </text>

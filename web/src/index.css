@@ -1,9 +1,127 @@
 @import 'tailwindcss';
 
+/* Design tokens ported from alileza/ben's docs — shared across all
+   brokemode web UI (this dashboard, docs/, Grafana). */
 :root {
-  color-scheme: dark;
+  --accent-blue: #0057ff;
+  --accent-red: #ff4034;
+  --accent-green: #00db7f;
+  --accent-orange: #ff6f06;
+  --accent-purple: #622eff;
+
+  /* Darkened same-hue steps for meaningful fills/text (>=3:1 on white). */
+  --status-good: #00a35e;
+  --status-warn: #d95f02;
+  --status-bad: #e02d20;
+
+  --content-primary: #0a0d12;
+  --content-secondary: #6b7280;
+  --content-tertiary: #9ca4ad;
+
+  --surface-primary: #ffffff;
+  --surface-secondary: rgba(0, 42, 97, 0.04);
+  --surface-inverted: #0e1116;
+
+  --border-primary: rgba(0, 42, 97, 0.1);
+  --border-secondary: rgba(0, 42, 97, 0.18);
+
+  --shadow-sm: 0 2px 12px 0 rgb(0 0 0 / 0.06);
+
+  color-scheme: light;
 }
 
 body {
-  @apply bg-slate-900 text-slate-200 antialiased;
+  background: var(--surface-primary);
+  color: var(--content-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.55;
+}
+
+/* ben-style components */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.brand-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #14181f, #2b323e);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 800;
+  font-size: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.card {
+  background: var(--surface-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 16px;
+  padding: 24px;
+}
+
+.kicker {
+  font-size: 12px;
+  font-weight: 680;
+  color: var(--accent-blue);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 680;
+  padding: 5px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.eyebrow.live {
+  color: var(--accent-blue);
+  background: rgba(0, 87, 255, 0.08);
+}
+.eyebrow.lost {
+  color: var(--status-warn);
+  background: rgba(255, 111, 6, 0.1);
+}
+.eyebrow .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  box-shadow: 0 0 0 3px rgba(0, 219, 127, 0.2);
+}
+.eyebrow.lost .dot {
+  background: var(--accent-orange);
+  box-shadow: 0 0 0 3px rgba(255, 111, 6, 0.2);
+}
+
+.quickstart {
+  background: var(--surface-inverted);
+  color: #e6edf3;
+  border-radius: 16px;
+  padding: 20px 24px;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-x: auto;
+}
+.quickstart .prompt {
+  color: #8b949e;
+  user-select: none;
+}
+.quickstart .comment {
+  color: #6e7681;
 }

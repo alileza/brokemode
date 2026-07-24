@@ -6,25 +6,27 @@ interface HostStripProps {
 
 const GB = 1024 ** 3;
 
+type Tone = 'ok' | 'warn' | 'bad';
+
 interface TileProps {
   label: string;
   value: string;
   sub?: string;
-  tone?: 'ok' | 'warn' | 'bad';
+  tone?: Tone;
 }
 
-const toneColor: Record<NonNullable<TileProps['tone']>, string> = {
-  ok: '#059669',
-  warn: '#d97706',
-  bad: '#ef4444',
+const toneColor: Record<Tone, string> = {
+  ok: 'var(--status-good)',
+  warn: 'var(--status-warn)',
+  bad: 'var(--status-bad)',
 };
 
 function Tile({ label, value, sub, tone }: TileProps) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-4 py-3">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 flex items-baseline gap-2">
-        <span className="text-xl font-semibold tabular-nums text-slate-100">{value}</span>
+    <div className="card !p-5">
+      <div className="kicker">{label}</div>
+      <div className="mt-2 flex items-baseline gap-2">
+        <span className="text-xl font-bold tracking-tight tabular-nums">{value}</span>
         {tone !== undefined && (
           <span
             className="inline-block h-2 w-2 rounded-full"
@@ -33,19 +35,21 @@ function Tile({ label, value, sub, tone }: TileProps) {
           />
         )}
       </div>
-      {sub !== undefined && <div className="mt-0.5 text-xs text-slate-500">{sub}</div>}
+      {sub !== undefined && (
+        <div className="mt-0.5 text-xs text-[var(--content-secondary)]">{sub}</div>
+      )}
     </div>
   );
 }
 
 /** GPU residency / power / memory pressure / thermal state, 1Hz. */
 export default function HostStrip({ telemetry: t }: HostStripProps) {
-  const pressureTone =
+  const pressureTone: Tone =
     t.memory_pressure_pct >= 80 ? 'bad' : t.memory_pressure_pct >= 60 ? 'warn' : 'ok';
-  const thermalTone = t.thermal_level > 0 ? 'bad' : 'ok';
+  const thermalTone: Tone = t.thermal_level > 0 ? 'bad' : 'ok';
 
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+    <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
       <Tile
         label="GPU active"
         value={`${(t.gpu_active_ratio * 100).toFixed(0)}%`}

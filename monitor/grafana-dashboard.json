@@ -34,7 +34,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "none",
-          "color": { "mode": "fixed", "fixedColor": "#3b82f6" },
+          "color": { "mode": "fixed", "fixedColor": "#0057ff" },
           "custom": { "lineWidth": 2, "fillOpacity": 12, "spanNulls": true }
         },
         "overrides": []
@@ -83,9 +83,9 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#059669", "value": null },
-              { "color": "#d97706", "value": 8858370048 },
-              { "color": "#ef4444", "value": 10871635968 }
+              { "color": "#00a35e", "value": null },
+              { "color": "#d95f02", "value": 8858370048 },
+              { "color": "#e02d20", "value": 10871635968 }
             ]
           }
         },
@@ -106,7 +106,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "color": { "mode": "fixed", "fixedColor": "#3b82f6" },
+          "color": { "mode": "fixed", "fixedColor": "#0057ff" },
           "custom": { "lineWidth": 2, "fillOpacity": 12 }
         },
         "overrides": []
@@ -129,9 +129,9 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#059669", "value": null },
-              { "color": "#d97706", "value": 60 },
-              { "color": "#ef4444", "value": 80 }
+              { "color": "#00a35e", "value": null },
+              { "color": "#d95f02", "value": 60 },
+              { "color": "#e02d20", "value": 80 }
             ]
           },
           "custom": { "lineWidth": 2, "fillOpacity": 12, "thresholdsStyle": { "mode": "line" } }
@@ -154,8 +154,8 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#059669", "value": null },
-              { "color": "#ef4444", "value": 1 }
+              { "color": "#00a35e", "value": null },
+              { "color": "#e02d20", "value": 1 }
             ]
           },
           "mappings": [
