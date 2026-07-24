@@ -1,0 +1,30 @@
+Extract the following order confirmation email into JSON. Respond with ONLY a JSON object matching this schema, no prose, no markdown fences:
+
+{
+  "order_id": string,
+  "customer": {"name": string, "email": string},
+  "items": [{"sku": string, "description": string, "quantity": number, "unit_price_eur": number}],
+  "shipping": {"method": string, "estimated_delivery": string},
+  "total_eur": number
+}
+
+---
+
+From: orders@nordkette-outdoor.example
+Subject: Your order NK-2024-88213 is confirmed
+
+Hi Priya Raghavan,
+
+Thanks for shopping with Nordkette Outdoor! We've received your order NK-2024-88213 and it's being packed now.
+
+Your items:
+- 1x Alpenglow 3-Season Sleeping Bag (SKU: SB-ALP-3S-RED) — €189.00
+- 2x Titanium Spork Long-Handle (SKU: UT-TISPK-LH) — €14.50 each
+- 1x Stratus 65L Backpack, graphite (SKU: BP-STR-65-GPH) — €249.95
+
+Shipping via DHL Express, estimated delivery Thursday 2 May.
+Order total: €467.95 (incl. VAT), charged to the card ending 4482.
+Confirmation sent to p.raghavan@example.org.
+
+Happy trails,
+The Nordkette Team

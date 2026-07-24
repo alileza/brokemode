@@ -1,0 +1,268 @@
+Review the following Go package for correctness bugs, race conditions, resource leaks, and API misuse. Report the five most serious issues, each with the line it occurs on, why it is wrong, and a one-line fix. Do not comment on style.
+
+--- file: jobqueue/queue.go ---
+
+package jobqueue
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"math/rand"
+	"net/http"
+	"sync"
+	"time"
+)
+
+type Job struct {
+	ID         int64           `json:"id"`
+	Kind       string          `json:"kind"`
+	Payload    json.RawMessage `json:"payload"`
+	Attempts   int             `json:"attempts"`
+	MaxRetries int             `json:"max_retries"`
+	RunAt      time.Time       `json:"run_at"`
+	CreatedAt  time.Time       `json:"created_at"`
+}
+
+type Handler func(ctx context.Context, job *Job) error
+
+type Queue struct {
+	db        *sql.DB
+	handlers  map[string]Handler
+	mu        sync.Mutex
+	inFlight  map[int64]*Job
+	pollEvery time.Duration
+	workers   int
+	stopped   bool
+	metrics   *Metrics
+}
+
+type Metrics struct {
+	Processed int64
+	Failed    int64
+	Retried   int64
+}
+
+func New(db *sql.DB, workers int) *Queue {
+	return &Queue{
+		db:        db,
+		handlers:  make(map[string]Handler),
+		inFlight:  make(map[int64]*Job),
+		pollEvery: 500 * time.Millisecond,
+		workers:   workers,
+		metrics:   &Metrics{},
+	}
+}
+
+func (q *Queue) Register(kind string, h Handler) {
+	q.handlers[kind] = h
+}
+
+func (q *Queue) Enqueue(ctx context.Context, kind string, payload interface{}, delay time.Duration) (int64, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return 0, fmt.Errorf("marshal payload: %w", err)
+	}
+	res, err := q.db.ExecContext(ctx,
+		`INSERT INTO jobs (kind, payload, run_at, created_at) VALUES (?, ?, ?, ?)`,
+		kind, body, time.Now().Add(delay), time.Now())
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (q *Queue) Run(ctx context.Context) error {
+	for i := 0; i < q.workers; i++ {
+		go q.worker(ctx, i)
+	}
+	<-ctx.Done()
+	q.stopped = true
+	return ctx.Err()
+}
+
+func (q *Queue) worker(ctx context.Context, id int) {
+	ticker := time.NewTicker(q.pollEvery)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			job, err := q.claim(ctx)
+			if err != nil {
+				log.Printf("worker %d: claim: %v", id, err)
+				continue
+			}
+			if job == nil {
+				continue
+			}
+			q.process(ctx, job)
+		}
+	}
+}
+
+func (q *Queue) claim(ctx context.Context) (*Job, error) {
+	rows, err := q.db.QueryContext(ctx,
+		`SELECT id, kind, payload, attempts, max_retries, run_at, created_at
+		 FROM jobs WHERE run_at <= ? AND claimed = 0 ORDER BY run_at LIMIT 1`,
+		time.Now())
+	if err != nil {
+		return nil, err
+	}
+	if !rows.Next() {
+		return nil, nil
+	}
+	var j Job
+	if err := rows.Scan(&j.ID, &j.Kind, &j.Payload, &j.Attempts, &j.MaxRetries, &j.RunAt, &j.CreatedAt); err != nil {
+		return nil, err
+	}
+	_, err = q.db.ExecContext(ctx, `UPDATE jobs SET claimed = 1 WHERE id = ?`, j.ID)
+	if err != nil {
+		return nil, err
+	}
+	q.inFlight[j.ID] = &j
+	return &j, nil
+}
+
+func (q *Queue) process(ctx context.Context, job *Job) {
+	h, ok := q.handlers[job.Kind]
+	if !ok {
+		log.Printf("no handler for kind %q, dropping job %d", job.Kind, job.ID)
+		return
+	}
+	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	err := h(cctx, job)
+	cancel()
+	if err != nil {
+		q.metrics.Failed++
+		if job.Attempts < job.MaxRetries {
+			q.metrics.Retried++
+			backoff := time.Duration(rand.Intn(1000)) * time.Millisecond * time.Duration(job.Attempts)
+			q.db.ExecContext(ctx,
+				`UPDATE jobs SET claimed = 0, attempts = attempts + 1, run_at = ? WHERE id = ?`,
+				time.Now().Add(backoff), job.ID)
+		}
+		return
+	}
+	q.metrics.Processed++
+	q.db.ExecContext(ctx, `DELETE FROM jobs WHERE id = ?`, job.ID)
+	delete(q.inFlight, job.ID)
+}
+
+func (q *Queue) InFlight() []*Job {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	out := make([]*Job, 0, len(q.inFlight))
+	for _, j := range q.inFlight {
+		out = append(out, j)
+	}
+	return out
+}
+
+--- file: jobqueue/api.go ---
+
+package jobqueue
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"time"
+)
+
+type enqueueRequest struct {
+	Kind    string          `json:"kind"`
+	Payload json.RawMessage `json:"payload"`
+	DelayMS int             `json:"delay_ms"`
+}
+
+func (q *Queue) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	case "/enqueue":
+		q.handleEnqueue(w, r)
+	case "/status":
+		q.handleStatus(w, r)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (q *Queue) handleEnqueue(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var req enqueueRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	id, err := q.Enqueue(r.Context(), req.Kind, req.Payload,
+		time.Duration(req.DelayMS)*time.Millisecond)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	fmt.Fprintf(w, `{"id": %s}`, strconv.FormatInt(id, 10))
+}
+
+func (q *Queue) handleStatus(w http.ResponseWriter, r *http.Request) {
+	resp := map[string]interface{}{
+		"in_flight": q.InFlight(),
+		"processed": q.metrics.Processed,
+		"failed":    q.metrics.Failed,
+		"retried":   q.metrics.Retried,
+	}
+	data, _ := json.Marshal(resp)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data)
+}
+
+--- file: jobqueue/retry_test.go ---
+
+package jobqueue
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+)
+
+func TestRetryBackoffGrows(t *testing.T) {
+	j := &Job{ID: 1, Attempts: 0, MaxRetries: 3}
+	var delays []time.Duration
+	for i := 0; i < 3; i++ {
+		j.Attempts = i
+		backoff := time.Duration(i) * 100 * time.Millisecond
+		delays = append(delays, backoff)
+	}
+	for i := 1; i < len(delays); i++ {
+		if delays[i] < delays[i-1] {
+			t.Fatalf("backoff shrank: %v", delays)
+		}
+	}
+}
+
+func TestHandlerTimeout(t *testing.T) {
+	q := New(nil, 1)
+	q.Register("slow", func(ctx context.Context, job *Job) error {
+		select {
+		case <-time.After(time.Minute):
+			return nil
+		case <-ctx.Done():
+			return errors.New("timed out")
+		}
+	})
+	_ = q
+}
+
+--- end of files ---
+
+Remember: the five most serious issues only, each with file, line, why, and a one-line fix.

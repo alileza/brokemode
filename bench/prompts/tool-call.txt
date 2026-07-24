@@ -1,0 +1,1 @@
+What's the weather like in Innsbruck right now, and should I pack a rain shell for a hike this afternoon? Use the get_weather tool to check before answering.

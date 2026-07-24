@@ -1,0 +1,57 @@
+# brokemode model registry — tuned for a 16GB MacBook Pro M2.
+#
+# max_rss_gb is a hard budget: install.sh and the CLI refuse to pull or
+# load any model whose measured peak RSS exceeds it. 11GB leaves ~5GB for
+# macOS, WindowServer, and your editor before the compressor starts eating
+# your decode rate.
+max_rss_gb: 11
+
+models:
+  - name: qwen3.5:9b
+    quantization: Q4_K_M
+    disk_gb: 5.9
+    peak_rss_gb: 7.8
+    num_ctx: 16384
+    default: true
+    expected_tps: 19
+    aliases:
+      - claude-sonnet-5
+      - sonnet
+      - default
+    use_when: "Daily driver: best quality that still leaves headroom for a browser; use for code review and agentic tool-calling."
+
+  - name: qwen3.5:4b
+    quantization: Q4_K_M
+    disk_gb: 2.6
+    peak_rss_gb: 4.1
+    num_ctx: 32768
+    default: true
+    expected_tps: 42
+    aliases:
+      - claude-haiku-4-5
+      - haiku
+      - fast
+    use_when: "Fast lane: quick chat, commit messages, and long-context summarization where speed beats depth."
+
+  - name: gemma4:12b
+    quantization: Q4_K_M
+    disk_gb: 7.6
+    peak_rss_gb: 10.2
+    num_ctx: 8192
+    default: false
+    expected_tps: 13
+    aliases:
+      - claude-opus-5
+      - opus
+    use_when: "Max quality single-task runs: close everything else first — 10GB RSS means no browser alongside it."
+
+  - name: gemma4:e4b
+    quantization: Q4_0
+    disk_gb: 3.1
+    peak_rss_gb: 3.4
+    num_ctx: 32768
+    default: false
+    expected_tps: 55
+    aliases:
+      - edge
+    use_when: "MatFormer edge variant: cheapest RSS in the registry; use when the gateway must coexist with a heavy IDE session."
