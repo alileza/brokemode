@@ -30,6 +30,8 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,12 +44,17 @@ jobs:
           BUMP: ${{ inputs.bump || 'patch' }}
         run: |
           set -euo pipefail
-          if [ -n "$(git tag --points-at HEAD -l 'v*')" ]; then
-            echo "HEAD is already released as $(git tag --points-at HEAD -l 'v*' | head -1); skipping."
+          if git tag --points-at HEAD | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "HEAD is already released as $(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1); skipping."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          latest="$(git tag -l 'v*' --sort=-v:refname | head -1)"
+          # Latest version = max over strict-semver git tags AND release tag
+          # names (drafts included) — pre-releases like v0.0.1-rc.0 are
+          # ignored, and names already consumed by a release are never
+          # reused (this repo has immutable releases).
+          latest="$( { git tag -l 'v*'; gh api 'repos/${{ github.repository }}/releases?per_page=100' --jq '.[].tag_name'; } \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)"
           latest="${latest:-v0.0.0}"
           IFS=. read -r MA MI PA <<< "${latest#v}"
           case "$BUMP" in
@@ -99,11 +106,37 @@ jobs:
           done
           cd dist && sha256sum brokemode-* > checksums.txt
 
-      # Creates the tag at this commit and publishes the release with it.
+      # Immutable-release-safe publish: create a DRAFT, upload assets while
+      # it's still mutable, then publish exactly once. If a name was burned
+      # by a previous (even deleted) immutable release, bump patch and try
+      # the next one. Stale drafts from earlier failed runs are removed
+      # first so they don't shadow the tag.
       - name: Publish release
         if: steps.ver.outputs.skip == 'false'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.ver.outputs.next }}
-          files: dist/*
-          generate_release_notes: true
+        env:
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -uo pipefail
+          gh api "repos/${REPO}/releases?per_page=100" \
+            --jq '.[] | select(.draft) | select(.tag_name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | .id' \
+            | while read -r id; do
+                echo "deleting stale draft release $id"
+                gh api -X DELETE "repos/${REPO}/releases/${id}"
+              done
+
+          TAG="${{ steps.ver.outputs.next }}"
+          for attempt in 1 2 3 4 5; do
+            echo "attempt ${attempt}: releasing ${TAG}"
+            if gh release create "$TAG" --draft --target "$SHA" --title "$TAG" --generate-notes dist/* \
+               && gh release edit "$TAG" --draft=false; then
+              echo "released ${TAG}"
+              exit 0
+            fi
+            echo "could not publish ${TAG} (name likely burned by an immutable release); cleaning up and bumping patch"
+            gh release delete "$TAG" --yes 2>/dev/null || true
+            IFS=. read -r MA MI PA <<< "${TAG#v}"
+            TAG="v${MA}.${MI}.$((PA+1))"
+          done
+          echo "failed to publish after 5 attempts"
+          exit 1
