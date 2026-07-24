@@ -9,15 +9,49 @@ Claude Code runs against your own silicon.
 
 ## Quickstart
 
+One line, on the Mac itself:
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/alileza/brokemode/main/install.sh | bash
 ```
 
-The installer refuses to run on anything but arm64 macOS, brew-installs
-`ollama` + `jq` if missing, starts Ollama via `brew services`, pulls every
-model marked `default: true` in [models.yaml](models.yaml), and writes
-`~/.brokemode/env`. Re-running is safe. `--dry-run` previews, `--models
-qwen3.5:4b,gemma4:e4b` narrows the pull set.
+To pass flags through the pipe, use `bash -s --`:
+
+```sh
+# preview without changing anything
+curl -fsSL https://raw.githubusercontent.com/alileza/brokemode/main/install.sh | bash -s -- --dry-run
+
+# pull only specific models
+curl -fsSL https://raw.githubusercontent.com/alileza/brokemode/main/install.sh | bash -s -- --models qwen3.5:4b,gemma4:e4b
+```
+
+Or from a clone (builds the binary with Go instead of downloading a
+release — use this if no release is published yet; the installer will
+tell you):
+
+```sh
+git clone https://github.com/alileza/brokemode.git && cd brokemode && ./install.sh
+```
+
+What the installer does, in order — re-running it is always safe:
+
+1. Refuses anything that isn't arm64 macOS; checks unified memory, CPU
+   cores, and free disk, and warns (with exact GB figures) if any are short.
+2. Brew-installs `ollama` and `jq` if missing; starts Ollama via
+   `brew services`.
+3. Installs the `brokemode` binary to `~/.brokemode/bin` (release download,
+   or `go build` from a checkout) and the registry to
+   `~/.brokemode/models.yaml`, then smoke-tests the binary.
+4. Pulls every model marked `default: true` in [models.yaml](models.yaml)
+   that fits this machine's memory budget and disk — anything that doesn't
+   fit is skipped with a loud reason, never silently.
+5. Writes `~/.brokemode/env` and prints a summary table (fit verdicts,
+   recommended + fastest picks) followed by numbered next steps:
+
+```sh
+grep -q 'brokemode/env' ~/.zshrc || echo 'source ~/.brokemode/env' >> ~/.zshrc
+source ~/.brokemode/env
+```
 
 Then:
 
@@ -148,6 +182,31 @@ hence `max_rss_gb`.
 Rule of thumb on 16GB: one model ≤ Q4 10GB RSS, context sized to leave
 headroom, and watch the compressed-pages line in the TUI.
 
+## Troubleshooting
+
+- **"no release binary published yet"** — the repo has no GitHub release
+  for `brokemode-darwin-arm64` yet. Clone and run `./install.sh` instead;
+  it builds with Go (`brew install go` if needed).
+- **"is ollama running?"** on any command — `brew services start ollama`,
+  then `ollama list` to confirm the daemon answers.
+- **GPU/power columns empty, run marked PARTIAL** — `powermetrics` needs
+  root. Run `sudo -v` right before `brokemode bench`, or add a NOPASSWD
+  sudoers rule for `/usr/bin/powermetrics`. Everything else still works.
+- **"models.yaml not found"** — the binary looks in the current directory,
+  next to the binary, then `~/.brokemode/models.yaml` (the installer puts
+  it there). Pass `--models-yaml path/to/models.yaml` to override.
+- **"NOT ENOUGH DISK" / "REFUSING to pull"** — the message includes the
+  exact GB to free or the machine size the model needs. `brokemode doctor`
+  re-checks after you clean up. Ollama blobs live in `~/.ollama/models`;
+  `ollama rm <model>` reclaims space.
+- **Everything is slow and the fans are on** — check `brokemode tui`: if
+  thermal shows THROTTLED or memory pressure is red, close apps or let the
+  machine cool; bench results during throttle are marked with a warning.
+
+**Uninstall:** `rm -rf ~/.brokemode`, remove the `source ~/.brokemode/env`
+line from `~/.zshrc`, and optionally `brew services stop ollama` /
+`brew uninstall ollama` (model blobs are in `~/.ollama`).
+
 ## Development
 
 ```sh
@@ -156,6 +215,10 @@ make test      # go tests (gateway SSE + tool round trip run against a fake Olla
 make lint      # golangci-lint + eslint + prettier
 make verify    # curl smoke test against a running gateway
 ```
+
+Working on a fork? The installer honors `BROKEMODE_REPO`,
+`BROKEMODE_RAW_BASE`, and `BROKEMODE_RELEASE_URL` overrides, which is also
+how its download paths are integration-tested against a local server.
 
 No Docker, no cloud dependencies, no Python. Shell is allowed only in
 `install.sh`. MIT licensed.

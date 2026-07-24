@@ -8,8 +8,11 @@
 #   --models a,b,c     pull only these models (still budget-checked)
 set -euo pipefail
 
-REPO="alileza/brokemode"
-RAW_BASE="https://raw.githubusercontent.com/${REPO}/main"
+# Overridable for forks and testing:
+#   BROKEMODE_REPO=you/brokemode BROKEMODE_RAW_BASE=... BROKEMODE_RELEASE_URL=...
+REPO="${BROKEMODE_REPO:-alileza/brokemode}"
+RAW_BASE="${BROKEMODE_RAW_BASE:-https://raw.githubusercontent.com/${REPO}/main}"
+RELEASE_URL="${BROKEMODE_RELEASE_URL:-https://github.com/${REPO}/releases/latest/download/brokemode-darwin-arm64}"
 BREW_PREFIX=""
 DRY_RUN=0
 ONLY_MODELS=""
@@ -146,16 +149,35 @@ run mkdir -p "$BIN_DIR"
 
 if [ -n "$REPO_DIR" ] && command -v go >/dev/null 2>&1; then
   log "building brokemode from local checkout (go build)"
-  run env CGO_ENABLED=0 go -C "$REPO_DIR" build -trimpath -o "$BIN_DIR/brokemode" ./cmd/brokemode
+  run env CGO_ENABLED=0 go build -C "$REPO_DIR" -trimpath -o "$BIN_DIR/brokemode" ./cmd/brokemode
 else
-  RELEASE_URL="https://github.com/${REPO}/releases/latest/download/brokemode-darwin-arm64"
   log "downloading release binary: $RELEASE_URL"
   if [ "$DRY_RUN" -eq 1 ]; then
     printf '\033[2m[dry-run]\033[0m curl -fsSL %s -o %s/brokemode\n' "$RELEASE_URL" "$BIN_DIR"
   else
     curl -fsSL "$RELEASE_URL" -o "$BIN_DIR/brokemode" \
-      || die "no release binary available; clone the repo and re-run ./install.sh to build with Go"
+      || die "no release binary published yet for ${REPO}. Build it yourself instead:
+    git clone https://github.com/${REPO}.git && cd brokemode && ./install.sh"
     chmod +x "$BIN_DIR/brokemode"
+  fi
+fi
+
+# The binary resolves models.yaml from CWD, its own directory, or
+# ~/.brokemode — persist the registry so a pipe install works from any
+# directory, not just the (deleted) temp dir we fetched it into.
+if [ "$DRY_RUN" -eq 0 ]; then
+  mkdir -p "$HOME/.brokemode"
+  cp "$MODELS_YAML" "$HOME/.brokemode/models.yaml"
+  log "installed registry to ~/.brokemode/models.yaml"
+fi
+
+# Smoke-test the installed binary (skip in dry-run and when it was
+# cross-compiled for a different OS during testing).
+if [ "$DRY_RUN" -eq 0 ] && [ -x "$BIN_DIR/brokemode" ]; then
+  if "$BIN_DIR/brokemode" --help >/dev/null 2>&1; then
+    log "brokemode binary responds: $("$BIN_DIR/brokemode" --help 2>/dev/null | head -1)"
+  else
+    warn "installed binary failed its smoke test — try rebuilding from a clone: git clone https://github.com/${REPO}.git && cd brokemode && ./install.sh"
   fi
 fi
 
@@ -220,8 +242,6 @@ fi
 
 # ---------------------------------------------------------------- summary
 printf '\n'
-log "add this line to ~/.zshrc:"
-printf '\n    source ~/.brokemode/env\n\n'
 
 printf '%-14s %10s %12s %14s %-12s %s\n' "MODEL" "DISK(GB)" "PEAK RSS(GB)" "EXPECTED TOK/S" "FIT" "STATUS"
 printf '%-14s %10s %12s %14s %-12s %s\n' "-----" "--------" "------------" "--------------" "---" "------"
@@ -239,8 +259,41 @@ while IFS='|' read -r name disk rss tps def; do
 done < <(parse_models)
 printf '\n'
 if [ -n "$RECOMMENDED" ]; then
-  log "recommended for this machine: $RECOMMENDED — try: brokemode bench --model $RECOMMENDED"
+  log "recommended for this machine: $RECOMMENDED"
   [ -n "$FASTEST" ] && [ "$FASTEST" != "$RECOMMENDED" ] && log "fast lane: $FASTEST"
 else
-  log "done, but nothing fits comfortably — run 'brokemode doctor' after freeing memory or disk."
+  warn "nothing fits comfortably yet — free up memory/disk (see warnings above), then run 'brokemode doctor'."
 fi
+
+BENCH_MODEL="${RECOMMENDED:-<model>}"
+cat <<EOF
+
+──────────────────────────────────────────────────────────────
+ NEXT STEPS
+──────────────────────────────────────────────────────────────
+ 1. Enable the environment (adds PATH + gateway vars, once):
+
+      grep -q 'brokemode/env' ~/.zshrc || echo 'source ~/.brokemode/env' >> ~/.zshrc
+      source ~/.brokemode/env
+
+ 2. Check what this machine can run:
+
+      brokemode doctor
+
+ 3. Benchmark the recommended model (fills results/summary.md):
+
+      brokemode bench --model ${BENCH_MODEL}
+
+ 4. Start the gateway + dashboard, then point Claude Code at it:
+
+      brokemode serve          # gateway :9100, dashboard http://127.0.0.1:9101
+
+      # in another terminal (already set if you sourced ~/.brokemode/env):
+      export ANTHROPIC_BASE_URL=http://127.0.0.1:9100
+      export ANTHROPIC_AUTH_TOKEN=brokemode-local
+      claude
+
+ Re-running this installer is always safe (idempotent).
+ Uninstall: rm -rf ~/.brokemode && brew services stop ollama
+──────────────────────────────────────────────────────────────
+EOF
