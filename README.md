@@ -63,13 +63,15 @@ What the installer does, in order — re-running it is always safe:
    model marked `default: true` that fits this machine's memory budget and
    disk — anything that doesn't fit is skipped with a loud reason, never
    silently.
-6. Writes `~/.brokemode/env` and prints a summary table (fit verdicts,
-   recommended + fastest picks) followed by numbered next steps:
-
-```sh
-grep -q 'brokemode/env' ~/.zshrc || echo 'source ~/.brokemode/env' >> ~/.zshrc
-source ~/.brokemode/env
-```
+6. Puts `brokemode` **on your PATH immediately** (a symlink into brew's
+   bin, so it works in the same terminal) and wires
+   `source ~/.brokemode/env` into your shell rc idempotently — new
+   terminals get the gateway variables automatically; for the current one,
+   `source ~/.brokemode/env`. Then it prints a summary table (fit
+   verdicts, recommended + fastest picks) and numbered next steps.
+   The env file points Claude Code at the local gateway by default —
+   values you export yourself win, and commenting the two `ANTHROPIC_*`
+   lines out of `~/.brokemode/env` keeps Claude Code on the real API.
 
 Then:
 

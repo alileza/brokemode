@@ -434,20 +434,54 @@ done < <(parse_models)
 
 [ -n "$PULLED" ] || warn "no models pulled (check --models spelling against models.yaml)"
 
-# ---------------------------------------------------------------- env file
+# ---------------------------------------------------------------- env + PATH
 ENV_FILE="$HOME/.brokemode/env"
 log "writing $ENV_FILE"
 if [ "$DRY_RUN" -eq 0 ]; then
   mkdir -p "$HOME/.brokemode"
   cat > "$ENV_FILE" <<EOF
-# brokemode environment — source this from ~/.zshrc
+# brokemode environment (sourced from your shell rc by install.sh)
 export PATH="\$HOME/.brokemode/bin:\$PATH"
-export OLLAMA_HOST="http://127.0.0.1:11434"
-export BROKEMODE_GATEWAY="http://127.0.0.1:9100"
-# Point Claude Code at the local gateway (any non-empty token works):
-export ANTHROPIC_BASE_URL="http://127.0.0.1:9100"
-export ANTHROPIC_AUTH_TOKEN="brokemode-local"
+export OLLAMA_HOST="\${OLLAMA_HOST:-http://127.0.0.1:11434}"
+export BROKEMODE_GATEWAY="\${BROKEMODE_GATEWAY:-http://127.0.0.1:9100}"
+# Point Claude Code at the local gateway (any non-empty token works).
+# Values you export yourself win; comment these out to keep Claude Code
+# on the real API by default.
+export ANTHROPIC_BASE_URL="\${ANTHROPIC_BASE_URL:-http://127.0.0.1:9100}"
+export ANTHROPIC_AUTH_TOKEN="\${ANTHROPIC_AUTH_TOKEN:-brokemode-local}"
 EOF
+fi
+
+# On PATH immediately: brew's bin is already on every macOS PATH, so a
+# symlink there beats waiting for a shell restart.
+if [ -d "$BREW_PREFIX/bin" ]; then
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '\033[2m[dry-run]\033[0m ln -sf %s/brokemode %s/bin/brokemode\n' "$BIN_DIR" "$BREW_PREFIX"
+  elif ln -sf "$BIN_DIR/brokemode" "$BREW_PREFIX/bin/brokemode" 2>/dev/null; then
+    log "linked $BREW_PREFIX/bin/brokemode — 'brokemode' works in this terminal right now"
+  else
+    warn "could not link into $BREW_PREFIX/bin — 'brokemode' is on PATH after you restart your shell"
+  fi
+fi
+
+# Wire the env file into the shell rc (idempotent) so new terminals get
+# the gateway variables too.
+case "$(basename "${SHELL:-/bin/zsh}")" in
+  zsh)  RC_FILE="$HOME/.zshrc" ;;
+  bash) RC_FILE="$HOME/.bash_profile" ;;
+  *)    RC_FILE="" ;;
+esac
+if [ -n "$RC_FILE" ]; then
+  if grep -qs 'brokemode/env' "$RC_FILE"; then
+    log "$(basename "$RC_FILE") already sources ~/.brokemode/env"
+  elif [ "$DRY_RUN" -eq 1 ]; then
+    printf '\033[2m[dry-run]\033[0m echo '"'"'source ~/.brokemode/env'"'"' >> %s\n' "$RC_FILE"
+  else
+    printf '\n# brokemode\nsource "$HOME/.brokemode/env"\n' >> "$RC_FILE"
+    log "added 'source ~/.brokemode/env' to $(basename "$RC_FILE")"
+  fi
+else
+  warn "unrecognized shell '$(basename "${SHELL:-}")' — add this line to its rc file yourself: source ~/.brokemode/env"
 fi
 
 # ---------------------------------------------------------------- summary
@@ -480,31 +514,28 @@ BENCH_MODEL="${RECOMMENDED:-<model>}"
 cat <<EOF
 
 ──────────────────────────────────────────────────────────────
- NEXT STEPS
+ NEXT STEPS   (brokemode is already on your PATH; the gateway
+              vars land in new terminals via ~/.brokemode/env —
+              current terminal: source ~/.brokemode/env)
 ──────────────────────────────────────────────────────────────
- 1. Enable the environment (adds PATH + gateway vars, once):
-
-      grep -q 'brokemode/env' ~/.zshrc || echo 'source ~/.brokemode/env' >> ~/.zshrc
-      source ~/.brokemode/env
-
- 2. Check what this machine can run:
+ 1. Check what this machine can run:
 
       brokemode doctor
 
- 3. Benchmark the recommended model (fills results/summary.md):
+ 2. Benchmark the recommended model (fills results/summary.md):
 
       brokemode bench --model ${BENCH_MODEL}
 
- 4. Start the gateway + dashboard, then point Claude Code at it:
+ 3. Start the gateway + dashboard, then point Claude Code at it:
 
       brokemode serve          # gateway :9100, dashboard http://127.0.0.1:9101
 
-      # in another terminal (already set if you sourced ~/.brokemode/env):
-      export ANTHROPIC_BASE_URL=http://127.0.0.1:9100
-      export ANTHROPIC_AUTH_TOKEN=brokemode-local
+      # in another terminal (env already set by ~/.brokemode/env):
       claude
 
  Re-running this installer is always safe (idempotent).
- Uninstall: rm -rf ~/.brokemode && brew services stop ollama
+ Uninstall: rm -rf ~/.brokemode, remove the brokemode lines from
+ your shell rc, rm \$(brew --prefix)/bin/brokemode, and optionally
+ brew services stop ollama
 ──────────────────────────────────────────────────────────────
 EOF
