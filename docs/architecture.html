@@ -1,150 +1,230 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Architecture — brokemode</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture — brokemode</title>
+<meta name="description" content="How brokemode fits together: one static binary, an Anthropic-to-Ollama gateway, 1Hz telemetry, and a memory budget everything obeys.">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="wrap">
-  <nav>
-    <a class="brand" href="./">brokemode</a>
+
+<header class="nav">
+  <a class="brand" href="./">
+    <span class="mark">b</span>
+    <span class="name">brokemode</span>
+  </a>
+  <nav class="links">
     <a href="./">Background</a>
     <a href="getting-started.html">Getting started</a>
     <a href="architecture.html" class="active">Architecture</a>
-    <a class="gh" href="https://github.com/alileza/brokemode">GitHub →</a>
+    <a href="https://github.com/alileza/brokemode" class="primary">GitHub →</a>
   </nav>
+</header>
 
-  <h1>Architecture</h1>
-  <p class="lead">
-    One static binary, three servers' worth of behavior, one budget that
-    everything obeys.
-  </p>
+<main>
+  <section class="hero" style="padding-bottom: 24px;">
+    <span class="eyebrow"><span class="dot"></span>One binary · three servers' worth of behavior</span>
+    <h1 style="font-size: clamp(32px, 5vw, 48px);">Architecture.</h1>
+    <p class="lede">A purpose-built gateway, honest telemetry, and one memory budget that every code path obeys.</p>
+  </section>
 
-  <h2>The big picture</h2>
-<pre class="diagram"><code>┌─────────────┐  Anthropic Messages API   ┌──────────────────────────┐   /api/chat    ┌─────────┐
-│ <b>Claude Code</b> │ ─────────────────────────▶│ <b>brokemode gateway :9100</b>  │ ─────────────▶ │ <b>Ollama</b>  │
-│  (or curl)  │ ◀───────────────────────── │  auth · translate ·      │ ◀───────────── │ :11434  │
-└─────────────┘   SSE event stream         │  instrument each request │  NDJSON stream │ (models)│
-                                           └───────────┬──────────────┘                └─────────┘
-                                                       │ TTFT, tok/s, tokens, peak RSS
-                                                       ▼
-   ┌───────────────────┐  1Hz snapshots   ┌──────────────────────────┐
-   │ <b>telemetry samplers</b>│ ────────────────▶│ <b>metrics registry</b>         │
-   │ powermetrics · ps  │                 │ prometheus gauges/histos │
-   │ vm_stat · pmset ·  │                 │ + recent-request ring    │
-   │ memory_pressure    │                 └───────────┬──────────────┘
-   └───────────────────┘                              │
-                ▲                                     ▼
-                │                     ┌──────────────────────────────────┐
-   ┌────────────┴───┐                 │ <b>brokemode serve :9101</b>            │
-   │ <b>brokemode tui</b>  │ ◀── snapshot ── │  /          embedded React SPA   │
-   │ (bubbletea)    │                 │  /metrics   Prometheus scrape    │
-   └────────────────┘                 │  /api/stream  1Hz SSE feed       │
-                                      └──────────────────────────────────┘
-                                              ▲                ▲
-                                         browser          Grafana / Prometheus</code></pre>
+  <section class="tight" id="pipeline">
+    <div class="section-head">
+      <div class="kicker">The request path</div>
+      <h2>Claude Code to your GPU.</h2>
+      <p>Claude Code speaks the Anthropic Messages API to the gateway; the gateway translates to Ollama's chat API and streams back the exact SSE event sequence Claude Code requires — instrumenting every request on the way through.</p>
+    </div>
+    <div class="pipeline">
+      <div class="stage">
+        <div class="stage-icon">⌨️</div>
+        <div class="stage-name">Claude Code</div>
+        <div class="stage-tech">Anthropic Messages API</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="stage">
+        <div class="stage-name" style="margin-top: 36px;">gateway :9100</div>
+        <div class="stage-tech">auth · translate · instrument</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="stage">
+        <div class="stage-icon">🦙</div>
+        <div class="stage-name">Ollama :11434</div>
+        <div class="stage-tech">/api/chat · NDJSON stream</div>
+      </div>
+    </div>
+  </section>
 
-  <p>
-    <code>brokemode serve</code> runs the gateway in the same process by
-    default, so the dashboard's request table and metrics see live gateway
-    traffic without any cross-process plumbing. <code>brokemode
-    gateway</code> runs it standalone when that's all you want.
-  </p>
+  <section class="tight" id="big-picture">
+    <div class="section-head">
+      <div class="kicker">The big picture</div>
+      <h2>Everything observes; one place aggregates.</h2>
+      <p>Telemetry samplers feed a shared metrics registry alongside per-request gateway numbers; <code>brokemode serve</code> exposes all of it three ways at once.</p>
+    </div>
+    <div class="preview flat" aria-label="Component diagram">
+      <div class="titlebar">
+        <span class="dot red"></span>
+        <span class="dot yellow"></span>
+        <span class="dot green"></span>
+        <span class="title">component diagram</span>
+      </div>
+      <pre>┌─────────────┐   Messages API    ┌─────────────────────────┐    /api/chat     ┌─────────┐
+│ <span class="cmd">Claude Code</span> │ ────────────────▶ │ <span class="cmd">gateway :9100</span>           │ ───────────────▶ │ <span class="cmd">Ollama</span>  │
+│  (or curl)  │ ◀──────────────── │ auth · translate ·      │ ◀─────────────── │ :11434  │
+└─────────────┘    SSE stream     │ instrument each request │   NDJSON stream  └─────────┘
+                                  └────────────┬────────────┘
+                                               │ <span class="dim">TTFT · tok/s · tokens · peak RSS</span>
+                                               ▼
+ ┌────────────────────┐  1Hz snapshots  ┌─────────────────────────┐
+ │ <span class="cmd">telemetry samplers</span> │ ──────────────▶ │ <span class="cmd">metrics registry</span>        │
+ │ powermetrics · ps  │                 │ prometheus series +     │
+ │ vm_stat · pmset ·  │                 │ recent-request ring     │
+ │ memory_pressure    │                 └────────────┬────────────┘
+ └────────────────────┘                              │
+            ▲                                        ▼
+ ┌──────────┴─────┐                 ┌───────────────────────────────────┐
+ │ <span class="cmd">brokemode tui</span>  │ ◀── snapshot ── │ <span class="cmd">brokemode serve :9101</span>             │
+ │ (bubbletea)    │                 │  /           embedded React SPA   │
+ └────────────────┘                 │  /metrics    Prometheus scrape    │
+                                    │  /api/stream 1Hz SSE feed         │
+                                    └───────────────────────────────────┘
+                                          ▲                   ▲
+                                      <span class="dim">browser</span>       <span class="dim">Grafana / Prometheus</span></pre>
+    </div>
+    <p class="muted" style="margin-top: 16px; max-width: 680px;">
+      <code>brokemode serve</code> runs the gateway in the same process by
+      default, so the dashboard's request table and metrics see live gateway
+      traffic without cross-process plumbing. <code>brokemode gateway</code>
+      runs it standalone when that's all you want.
+    </p>
+  </section>
 
-  <h2>The registry is the law</h2>
-  <p>
-    <code>models.yaml</code> defines each model's Ollama tag, quantization,
-    disk size, <em>measured</em> peak RSS, recommended context length for a
-    16GB box, and aliases — plus the global <code>max_rss_gb</code> budget.
-    Every load path goes through the same check:
-  </p>
-  <ul>
-    <li><span class="pill good">install.sh</span> refuses to pull models over
-        budget or beyond free disk, with the exact shortfall;</li>
-    <li><span class="pill good">bench / gateway</span> refuse to load them,
-        before any request reaches Ollama;</li>
-    <li><span class="pill good">doctor</span> classifies every entry as
-        comfortable / tight / no-fit against
-        <code>min(max_rss_gb, memory − 5GB)</code> for the actual machine.</li>
-    </ul>
-  <p>
-    Resolution order: <code>--models-yaml</code> flag → current directory →
-    next to the binary → <code>~/.brokemode/models.yaml</code> → the copy
-    embedded at build time. A bare release download always runs.
-  </p>
+  <section class="tight" id="registry">
+    <div class="section-head">
+      <div class="kicker">The registry is the law</div>
+      <h2>One budget, enforced everywhere.</h2>
+      <p>models.yaml defines each model's Ollama tag, quantization, disk size, measured peak RSS, recommended context length for a 16GB box, and aliases — plus the global max_rss_gb budget. Every load path goes through the same check.</p>
+    </div>
+    <div class="features">
+      <div class="feature">
+        <div class="icon blue">⛨</div>
+        <h3>install.sh</h3>
+        <p>Refuses to pull models over budget or beyond free disk, reporting the exact shortfall in GB.</p>
+      </div>
+      <div class="feature">
+        <div class="icon red">✕</div>
+        <h3>bench &amp; gateway</h3>
+        <p>Refuse to load over-budget models before any request reaches Ollama — a 400 with the numbers, never an OOM.</p>
+      </div>
+      <div class="feature">
+        <div class="icon green">✓</div>
+        <h3>doctor</h3>
+        <p>Classifies every entry as comfortable / tight / no-fit against min(max_rss_gb, memory − 5GB) for the actual machine.</p>
+      </div>
+    </div>
+    <p class="muted" style="margin-top: 20px; max-width: 680px;">
+      Resolution order: <code>--models-yaml</code> flag → current directory →
+      next to the binary → <code>~/.brokemode/models.yaml</code> → the copy
+      embedded at build time. A bare release download always runs.
+    </p>
+  </section>
 
-  <h2>The gateway, carefully</h2>
-  <p>
-    Claude Code will not tolerate a malformed stream, so the SSE sequence is
-    generated by a small state machine and locked down by table-driven
-    tests against a fake Ollama:
-  </p>
-<pre><code>message_start → ping → content_block_start → content_block_delta*
-  → content_block_stop → (more blocks…) → message_delta → message_stop</code></pre>
-  <ul>
-    <li><strong>Tool calls:</strong> Anthropic <code>tool_use</code> blocks
-        become Ollama <code>tool_calls</code>; <code>tool_result</code>
-        blocks become tool-role messages, with tool-use IDs mapped back to
-        tool names (Ollama addresses tools by name). Streaming tool calls
-        emit <code>input_json_delta</code> blocks.</li>
-    <li><strong>Accounting:</strong> <code>usage</code> comes from Ollama's
-        native <code>prompt_eval_count</code> / <code>eval_count</code>;
-        stop reasons map <code>stop → end_turn</code>,
-        <code>length → max_tokens</code>, tool calls → <code>tool_use</code>.</li>
-    <li><strong>Instrumentation:</strong> every request records TTFT, decode
-        tok/s, tokens in/out, and peak Ollama RSS (sampled at 500ms during
-        the request) — the reason this is a purpose-built gateway and not an
-        off-the-shelf proxy.</li>
-    <li><strong>Auth:</strong> any non-empty bearer token or
-        <code>x-api-key</code>; the gateway binds to localhost.</li>
-  </ul>
+  <section class="tight" id="gateway">
+    <div class="section-head">
+      <div class="kicker">The gateway, carefully</div>
+      <h2>An SSE stream Claude Code will accept.</h2>
+      <p>Claude Code will not tolerate a malformed stream, so the sequence is generated by a small state machine and locked down by table-driven tests against a fake Ollama.</p>
+    </div>
+    <div class="quickstart">message_start → ping → content_block_start → content_block_delta*
+  → content_block_stop → <span class="comment">(more blocks…)</span> → message_delta → message_stop</div>
+    <div class="features" style="margin-top: 16px;">
+      <div class="feature">
+        <div class="icon purple">⚒</div>
+        <h3>Tool calls</h3>
+        <p>tool_use blocks become Ollama tool_calls; tool_result blocks become tool-role messages, with tool-use IDs mapped back to tool names. Streaming tool calls emit input_json_delta blocks.</p>
+      </div>
+      <div class="feature">
+        <div class="icon orange">Σ</div>
+        <h3>Accounting</h3>
+        <p>usage comes from Ollama's native prompt_eval_count / eval_count; stop reasons map stop → end_turn, length → max_tokens, tool calls → tool_use.</p>
+      </div>
+      <div class="feature">
+        <div class="icon blue">◔</div>
+        <h3>Instrumentation</h3>
+        <p>Every request records TTFT, decode tok/s, tokens in/out, and peak Ollama RSS — the reason this is a purpose-built gateway and not an off-the-shelf proxy.</p>
+      </div>
+    </div>
+  </section>
 
-  <h2>Benchmarks that don't lie</h2>
-  <ul>
-    <li>Ollama's own nanosecond timing fields (<code>load_duration</code>,
-        <code>prompt_eval_*</code>, <code>eval_*</code>) — no client-side
-        stopwatch guessing.</li>
-    <li>3 warmup + 5 measured runs per prompt class; median and p95
-        reported, never the mean.</li>
-    <li>Five prompt classes: short chat, 1k summarization, 4k code review,
-        JSON structured output, and a two-leg tool-call round trip.</li>
-    <li>1Hz host telemetry per case; no sudo → results marked
-        <span class="pill warn">PARTIAL</span>, never silently degraded.
-        Decode rate sagging &gt;15% across runs →
-        <span class="pill bad">thermal-throttle warning</span>.</li>
-  </ul>
+  <section class="tight" id="bench">
+    <div class="section-head">
+      <div class="kicker">Benchmarks that don't lie</div>
+      <h2>Native timings, median and p95.</h2>
+    </div>
+    <div class="prose">
+      <ul>
+        <li>Ollama's own nanosecond timing fields (<code>load_duration</code>,
+            <code>prompt_eval_*</code>, <code>eval_*</code>) — no client-side
+            stopwatch guessing.</li>
+        <li>3 warmup + 5 measured runs per prompt class; median and p95
+            reported, never the mean.</li>
+        <li>Five prompt classes: short chat, 1k summarization, 4k code review,
+            JSON structured output, and a two-leg tool-call round trip.</li>
+        <li>1Hz host telemetry per case; no sudo → results marked
+            <span class="pill warn">PARTIAL</span>, never silently degraded.
+            Decode rate sagging &gt;15% across runs →
+            <span class="pill bad">thermal-throttle warning</span>.</li>
+      </ul>
+    </div>
+  </section>
 
-  <h2>Package layout</h2>
-  <table>
-    <tr><th>Path</th><th>Responsibility</th></tr>
-    <tr><td><code>cmd/brokemode</code></td><td>cobra CLI: bench · gateway · serve · tui · models · doctor</td></tr>
-    <tr><td><code>internal/registry</code></td><td>models.yaml parsing, aliasing, RSS budget enforcement</td></tr>
-    <tr><td><code>internal/ollama</code></td><td>client for /api/generate, /api/chat (incl. streaming + tools), /api/tags</td></tr>
-    <tr><td><code>internal/bench</code></td><td>benchmark runner, stats, JSON reports + summary.md</td></tr>
-    <tr><td><code>internal/telemetry</code></td><td>1Hz samplers: powermetrics, memory_pressure, vm_stat, ollama RSS, pmset</td></tr>
-    <tr><td><code>internal/metrics</code></td><td>Prometheus registry + recent-request ring buffer + stream payload</td></tr>
-    <tr><td><code>internal/gateway</code></td><td>Anthropic Messages ⇄ Ollama translation, SSE state machine</td></tr>
-    <tr><td><code>internal/recommend</code></td><td>machine-aware fit verdicts and model picks</td></tr>
-    <tr><td><code>internal/tui</code></td><td>bubbletea terminal dashboard</td></tr>
-    <tr><td><code>web/</code></td><td>Vite + React + strict TS dashboard (Tailwind only), embedded via embed.FS</td></tr>
-    <tr><td><code>bench/prompts</code></td><td>embedded prompt suite</td></tr>
-    <tr><td><code>monitor/</code></td><td>Grafana dashboard JSON + prometheus.yml</td></tr>
-  </table>
+  <section class="tight" id="layout">
+    <div class="section-head">
+      <div class="kicker">Package layout</div>
+      <h2>Where things live.</h2>
+    </div>
+    <table class="req">
+      <thead><tr><th>Path</th><th>Responsibility</th></tr></thead>
+      <tbody>
+        <tr><td class="req-name"><code>cmd/brokemode</code></td><td class="req-note">cobra CLI: bench · gateway · serve · tui · models · doctor</td></tr>
+        <tr><td class="req-name"><code>internal/registry</code></td><td class="req-note">models.yaml parsing, aliasing, RSS budget enforcement</td></tr>
+        <tr><td class="req-name"><code>internal/ollama</code></td><td class="req-note">client for /api/generate, /api/chat (incl. streaming + tools), /api/tags</td></tr>
+        <tr><td class="req-name"><code>internal/bench</code></td><td class="req-note">benchmark runner, stats, JSON reports + summary.md</td></tr>
+        <tr><td class="req-name"><code>internal/telemetry</code></td><td class="req-note">1Hz samplers: powermetrics, memory_pressure, vm_stat, ollama RSS, pmset</td></tr>
+        <tr><td class="req-name"><code>internal/metrics</code></td><td class="req-note">Prometheus registry + recent-request ring buffer + stream payload</td></tr>
+        <tr><td class="req-name"><code>internal/gateway</code></td><td class="req-note">Anthropic Messages ⇄ Ollama translation, SSE state machine</td></tr>
+        <tr><td class="req-name"><code>internal/recommend</code></td><td class="req-note">machine-aware fit verdicts and model picks</td></tr>
+        <tr><td class="req-name"><code>internal/tui</code></td><td class="req-note">bubbletea terminal dashboard</td></tr>
+        <tr><td class="req-name"><code>web/</code></td><td class="req-note">Vite + React + strict TS dashboard (Tailwind only), embedded via embed.FS</td></tr>
+        <tr><td class="req-name"><code>bench/prompts</code></td><td class="req-note">embedded prompt suite</td></tr>
+        <tr><td class="req-name"><code>monitor/</code></td><td class="req-note">Grafana dashboard JSON + prometheus.yml</td></tr>
+      </tbody>
+    </table>
+  </section>
 
-  <h2>Build &amp; release</h2>
-  <p>
-    <code>make build</code> runs the Vite build, then a static
-    <code>go build</code> that embeds <code>web/dist</code>, the registry,
-    and the prompts — so <code>brokemode serve</code> needs no node_modules
-    at runtime, and a release asset is one file. Pushing a <code>v*</code>
-    tag triggers the release workflow: dashboard build, tests, then
-    darwin/linux × arm64/amd64 binaries with sha256 checksums. The
-    installer downloads exactly the one matching the machine.
-  </p>
+  <section class="tight" id="release">
+    <div class="section-head">
+      <div class="kicker">Build &amp; release</div>
+      <h2>Tag it, ship one file.</h2>
+      <p>make build runs the Vite build, then a static go build that embeds web/dist, the registry, and the prompts — so serve needs no node_modules at runtime, and a release asset is one file.</p>
+    </div>
+    <div class="quickstart"><span class="prompt">$</span> git tag v0.1.0 && git push origin v0.1.0
+<span class="comment"># → GitHub Actions: dashboard build, tests, then
+#   brokemode-{darwin,linux}-{arm64,amd64} + sha256 checksums.
+#   install.sh downloads exactly the one matching the machine.</span></div>
+  </section>
+</main>
 
-  <footer>MIT licensed · <a href="https://github.com/alileza/brokemode">github.com/alileza/brokemode</a></footer>
-</div>
+<footer>
+  <div class="inner">
+    <span>brokemode — MIT-licensed open source</span>
+    <span class="grow"></span>
+    <a href="./">Background</a>
+    <a href="getting-started.html">Getting started</a>
+    <a href="https://github.com/alileza/brokemode">GitHub</a>
+    <a href="https://github.com/alileza/brokemode/issues">Issues</a>
+  </div>
+</footer>
+
 </body>
 </html>

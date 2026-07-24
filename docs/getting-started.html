@@ -1,119 +1,168 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Getting started — brokemode</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting started — brokemode</title>
+<meta name="description" content="Install brokemode with one line, benchmark your machine's recommended model, and point Claude Code at your own silicon.">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="wrap">
-  <nav>
-    <a class="brand" href="./">brokemode</a>
+
+<header class="nav">
+  <a class="brand" href="./">
+    <span class="mark">b</span>
+    <span class="name">brokemode</span>
+  </a>
+  <nav class="links">
     <a href="./">Background</a>
     <a href="getting-started.html" class="active">Getting started</a>
     <a href="architecture.html">Architecture</a>
-    <a class="gh" href="https://github.com/alileza/brokemode">GitHub →</a>
+    <a href="https://github.com/alileza/brokemode" class="primary">GitHub →</a>
   </nav>
+</header>
 
-  <h1>Getting started</h1>
-  <p class="lead">One line on the Mac itself. Everything else follows from there.</p>
+<main>
+  <section class="hero" style="padding-bottom: 24px;">
+    <span class="eyebrow"><span class="dot"></span>One line on the Mac itself</span>
+    <h1 style="font-size: clamp(32px, 5vw, 48px);">Getting started.</h1>
+    <p class="lede">Install, check what your machine can run, benchmark it, then point Claude Code at it. Everything else follows from there.</p>
+  </section>
 
-  <h2>Requirements</h2>
-  <ul>
-    <li>Apple Silicon Mac (arm64) — the installer refuses anything else</li>
-    <li>16GB unified memory recommended; 8–16GB works with a tightened
-        budget and loud warnings</li>
-    <li><a href="https://brew.sh">Homebrew</a></li>
-    <li>~10GB free disk for the default models (checked before pulling,
-        with the exact shortfall reported)</li>
-  </ul>
+  <section class="tight" id="requirements">
+    <div class="section-head">
+      <div class="kicker">Before you start</div>
+      <h2>Requirements.</h2>
+    </div>
+    <table class="req">
+      <thead><tr><th>Requirement</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="req-name">Apple Silicon Mac (arm64)</td>
+          <td class="req-note">The installer refuses anything else, including Rosetta shells.</td>
+        </tr>
+        <tr>
+          <td class="req-name">16GB unified memory</td>
+          <td class="req-note">Recommended. 8–16GB works with a tightened budget and loud warnings; below 8GB nothing in the registry fits.</td>
+        </tr>
+        <tr>
+          <td class="req-name">Homebrew</td>
+          <td class="req-note"><a href="https://brew.sh">brew.sh</a> — used to install and run Ollama as a service.</td>
+        </tr>
+        <tr>
+          <td class="req-name">~10GB free disk</td>
+          <td class="req-note">For the default models. Checked before pulling — the exact shortfall is reported if you're low.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
 
-  <h2>Install</h2>
-<pre><code>curl -fsSL https://raw.githubusercontent.com/alileza/brokemode/main/install.sh | bash</code></pre>
-  <p>To pass flags through the pipe, use <code>bash -s --</code>:</p>
-<pre><code># preview without changing anything
-curl -fsSL https://raw.githubusercontent.com/alileza/brokemode/main/install.sh | bash -s -- --dry-run
+  <section id="install" class="tight">
+    <div class="section-head">
+      <div class="kicker">Install</div>
+      <h2>One line.</h2>
+      <p>Idempotent — re-running is always safe. It verifies the machine, installs Ollama, downloads one self-contained binary matched to your architecture, pulls the models that fit, and prints a fit table with a recommended pick.</p>
+    </div>
+    <div class="quickstart"><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/alileza/brokemode/main/install.sh | bash
 
-# pull only specific models
-curl -fsSL https://raw.githubusercontent.com/alileza/brokemode/main/install.sh | bash -s -- --models qwen3.5:4b,gemma4:e4b</code></pre>
-  <p>
-    Or from a clone (builds with Go instead of downloading a release —
-    use this if no release is published yet):
-  </p>
-<pre><code>git clone https://github.com/alileza/brokemode.git && cd brokemode && ./install.sh</code></pre>
+<span class="comment"># preview without changing anything</span>
+<span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/alileza/brokemode/main/install.sh | bash -s -- --dry-run
 
-  <p>The installer is idempotent — re-running is always safe. It:</p>
-  <ol>
-    <li>verifies arm64 macOS and checks memory, cores, and free disk,
-        warning with exact GB figures if anything is short;</li>
-    <li>brew-installs <code>ollama</code> + <code>jq</code> if missing and
-        starts Ollama via <code>brew services</code>;</li>
-    <li>downloads <strong>one self-contained binary</strong> matched to your
-        machine (registry, dashboard, and prompts embedded) and smoke-tests
-        it;</li>
-    <li>pulls every default model that fits your machine's budget — and
-        prints a fit table with a recommended pick.</li>
-  </ol>
+<span class="comment"># pull only specific models</span>
+<span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/alileza/brokemode/main/install.sh | bash -s -- --models qwen3.5:4b,gemma4:e4b
 
-  <h2>First steps</h2>
-<pre><code># enable the environment (once)
-grep -q 'brokemode/env' ~/.zshrc || echo 'source ~/.brokemode/env' >> ~/.zshrc
-source ~/.brokemode/env
+<span class="comment"># or from a clone (builds with Go — use this if no release is published yet)</span>
+<span class="prompt">$</span> git clone https://github.com/alileza/brokemode.git && cd brokemode && ./install.sh</div>
+  </section>
 
-# what can THIS machine run?
-brokemode doctor
+  <section id="first-steps" class="tight">
+    <div class="section-head">
+      <div class="kicker">First steps</div>
+      <h2>Doctor, bench, serve.</h2>
+    </div>
+    <div class="quickstart"><span class="comment"># enable the environment (once)</span>
+<span class="prompt">$</span> grep -q 'brokemode/env' ~/.zshrc || echo 'source ~/.brokemode/env' >> ~/.zshrc
+<span class="prompt">$</span> source ~/.brokemode/env
 
-# benchmark the recommended model (median/p95, results/summary.md)
-brokemode bench --model qwen3.5:9b
+<span class="comment"># what can THIS machine run?</span>
+<span class="prompt">$</span> brokemode doctor
 
-# gateway :9100 + web dashboard http://127.0.0.1:9101
-brokemode serve
+<span class="comment"># benchmark the recommended model (median/p95 into results/summary.md)</span>
+<span class="prompt">$</span> brokemode bench --model qwen3.5:9b
 
-# terminal dashboard
-brokemode tui</code></pre>
+<span class="comment"># gateway :9100 + web dashboard http://127.0.0.1:9101</span>
+<span class="prompt">$</span> brokemode serve
 
-  <p>
-    For full GPU and power telemetry during benchmarks, run
-    <code>sudo -v</code> first — <code>powermetrics</code> needs root.
-    Without it the run still completes but is loudly marked
-    <span class="pill warn">PARTIAL</span>.
-  </p>
+<span class="comment"># terminal dashboard</span>
+<span class="prompt">$</span> brokemode tui</div>
+    <p class="muted" style="margin-top: 16px; max-width: 640px;">
+      For full GPU and power telemetry during benchmarks, run <code>sudo -v</code>
+      first — <code>powermetrics</code> needs root. Without it the run still
+      completes but is loudly marked <span class="pill warn">PARTIAL</span>.
+    </p>
+  </section>
 
-  <h2>Point Claude Code at it</h2>
-<pre><code>brokemode serve          # keep running
+  <section id="claude-code" class="tight">
+    <div class="section-head">
+      <div class="kicker">The payoff</div>
+      <h2>Point Claude Code at it.</h2>
+      <p>The gateway accepts any non-empty token and aliases Claude model names through the registry — requests for claude-sonnet-5 run on qwen3.5:9b, claude-haiku-4-5 on qwen3.5:4b, each with its registry context length applied.</p>
+    </div>
+    <div class="quickstart"><span class="prompt">$</span> brokemode serve          <span class="comment"># keep running</span>
 
-# in another terminal (already set if you sourced ~/.brokemode/env)
-export ANTHROPIC_BASE_URL=http://127.0.0.1:9100
-export ANTHROPIC_AUTH_TOKEN=brokemode-local   # any non-empty token
-claude</code></pre>
-  <p>
-    Model names alias through the registry: requests for
-    <code>claude-sonnet-5</code> (dated variants included) run on
-    <code>qwen3.5:9b</code>, <code>claude-haiku-4-5</code> on
-    <code>qwen3.5:4b</code> — each with its registry context length applied.
-    Verify a running gateway any time with
-    <code>./scripts/verify-gateway.sh</code>.
-  </p>
+<span class="comment"># in another terminal (already set if you sourced ~/.brokemode/env)</span>
+<span class="prompt">$</span> export ANTHROPIC_BASE_URL=http://127.0.0.1:9100
+<span class="prompt">$</span> export ANTHROPIC_AUTH_TOKEN=brokemode-local
+<span class="prompt">$</span> claude
 
-  <h2>If something's off</h2>
-  <table>
-    <tr><th>Symptom</th><th>Fix</th></tr>
-    <tr><td>"no release binary published yet"</td>
-        <td>Clone and <code>./install.sh</code> — it builds with Go.</td></tr>
-    <tr><td>"is ollama running?"</td>
-        <td><code>brew services start ollama</code>, confirm with <code>ollama list</code>.</td></tr>
-    <tr><td>"NOT ENOUGH DISK" / "REFUSING to pull"</td>
-        <td>The message names the exact GB to free. <code>ollama rm &lt;model&gt;</code> reclaims blob space; re-check with <code>brokemode doctor</code>.</td></tr>
-    <tr><td>Slow, fans on</td>
-        <td>Check <code>brokemode tui</code> — thermal THROTTLED or red memory pressure means close apps or let it cool.</td></tr>
-    <tr><td>Uninstall</td>
-        <td><code>rm -rf ~/.brokemode</code>, drop the zshrc line, optionally <code>brew services stop ollama</code>.</td></tr>
-  </table>
+<span class="comment"># verify a running gateway any time</span>
+<span class="prompt">$</span> ./scripts/verify-gateway.sh</div>
+  </section>
 
-  <p><a href="architecture.html">How it all fits together →</a></p>
+  <section id="troubleshooting" class="tight">
+    <div class="section-head">
+      <div class="kicker">If something's off</div>
+      <h2>Troubleshooting.</h2>
+    </div>
+    <table class="req">
+      <thead><tr><th>Symptom</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="req-name">"no release binary published yet"</td>
+          <td class="req-note">Clone and <code>./install.sh</code> — it builds with Go (<code>brew install go</code> if needed).</td>
+        </tr>
+        <tr>
+          <td class="req-name">"is ollama running?"</td>
+          <td class="req-note"><code>brew services start ollama</code>, then confirm with <code>ollama list</code>.</td>
+        </tr>
+        <tr>
+          <td class="req-name">"NOT ENOUGH DISK" / "REFUSING to pull"</td>
+          <td class="req-note">The message names the exact GB to free. <code>ollama rm &lt;model&gt;</code> reclaims blob space; re-check with <code>brokemode doctor</code>.</td>
+        </tr>
+        <tr>
+          <td class="req-name">Slow, fans on</td>
+          <td class="req-note">Check <code>brokemode tui</code> — thermal THROTTLED or red memory pressure means close apps or let it cool. Bench results during throttle carry a warning.</td>
+        </tr>
+        <tr>
+          <td class="req-name">Uninstall</td>
+          <td class="req-note"><code>rm -rf ~/.brokemode</code>, drop the zshrc line, optionally <code>brew services stop ollama</code> (model blobs live in <code>~/.ollama</code>).</td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="margin-top: 24px;"><a href="architecture.html">How it all fits together →</a></p>
+  </section>
+</main>
 
-  <footer>MIT licensed · <a href="https://github.com/alileza/brokemode">github.com/alileza/brokemode</a></footer>
-</div>
+<footer>
+  <div class="inner">
+    <span>brokemode — MIT-licensed open source</span>
+    <span class="grow"></span>
+    <a href="./">Background</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="https://github.com/alileza/brokemode">GitHub</a>
+    <a href="https://github.com/alileza/brokemode/issues">Issues</a>
+  </div>
+</footer>
+
 </body>
 </html>
