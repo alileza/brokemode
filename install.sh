@@ -3,9 +3,13 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/alileza/brokemode/main/install.sh | bash
 #
+# Gets the brokemode binary installed and on your PATH (plus a running,
+# version-matched Ollama). Everything after that — model pulls, doctor,
+# launching Claude Code — lives in the binary itself: just run `brokemode`.
+#
 # Idempotent: safe to re-run. Supports:
-#   --dry-run          print what would happen, change nothing
-#   --models a,b,c     pull only these models (still budget-checked)
+#   --dry-run   print what would happen, change nothing
+#   --yes, -y   answer yes to every prompt
 set -euo pipefail
 
 # Overridable for forks and testing:
@@ -14,7 +18,6 @@ REPO="${BROKEMODE_REPO:-alileza/brokemode}"
 RELEASE_BASE="${BROKEMODE_RELEASE_BASE:-https://github.com/${REPO}/releases/latest/download}"
 BREW_PREFIX=""
 DRY_RUN=0
-ONLY_MODELS=""
 
 log()  { printf '\033[1;36m[brokemode]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[brokemode] WARN:\033[0m %s\n' "$*" >&2; }
@@ -32,9 +35,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1 ;;
     --yes|-y)  ASSUME_YES=1 ;;
-    --models)  ONLY_MODELS="${2:-}"; shift ;;
-    --models=*) ONLY_MODELS="${1#--models=}" ;;
-    *) die "unknown flag: $1 (supported: --dry-run, --yes, --models a,b,c)" ;;
+    *) die "unknown flag: $1 (supported: --dry-run, --yes)" ;;
   esac
   shift
 done
@@ -291,149 +292,6 @@ ensure_ollama_version() {
 MIN_OLLAMA="$(awk '/^min_ollama_version:/ { gsub(/"/,"",$2); print $2 }' "$MODELS_YAML")"
 ensure_ollama_version "$MIN_OLLAMA"
 
-# upgrade_and_restart_ollama: brew-upgrade the client and bounce the daemon
-# so both report the same version. Returns 1 (with guidance) when brew
-# can't help — e.g. Ollama came from the .app, or brew's bottle still lags.
-upgrade_and_restart_ollama() {
-  if ! brew upgrade ollama; then
-    warn "brew upgrade ollama failed — if Ollama came from the app, download the latest from https://ollama.com/download and re-run this installer"
-    return 1
-  fi
-  brew services restart ollama >/dev/null 2>&1 || brew services start ollama >/dev/null 2>&1 || true
-  local cv sv
-  cv="$(client_version)"
-  sv="$(wait_for_server "$cv" || true)"
-  if [ -n "$cv" ] && [ "$sv" != "$cv" ]; then
-    warn "ollama daemon is v${sv:-not responding} but the client is v$cv — try: brew services restart ollama"
-    return 1
-  fi
-  log "ollama upgraded; client and daemon are v${cv:-unknown}"
-}
-
-# pull_model <name>: ollama pull with live progress, catching the registry's
-# 412 "requires a newer version of Ollama" refusal — that error is the
-# authoritative version signal (newer models raise the bar ahead of any
-# number models.yaml can guess), so offer the upgrade and retry once.
-pull_model() {
-  local name="$1" rc
-  ollama pull "$name" 2>&1 | tee "$WORKDIR/pull.log"
-  rc=${PIPESTATUS[0]}
-  [ "$rc" -eq 0 ] && return 0
-  if grep -qi "requires a newer version of Ollama" "$WORKDIR/pull.log"; then
-    warn "$name needs a newer Ollama than the installed v$(client_version) (the model registry refused the pull)"
-    if confirm "Upgrade ollama via 'brew upgrade ollama' and retry the pull?"; then
-      if upgrade_and_restart_ollama; then
-        ollama pull "$name" && return 0
-        warn "still refused after the brew upgrade — Homebrew's bottle may lag behind; install the latest from https://ollama.com/download, then re-run this installer"
-      fi
-    else
-      warn "skipping $name — upgrade Ollama and re-run this installer to pull it"
-    fi
-  fi
-  return 1
-}
-
-# Parse our (fixed-shape) models.yaml with awk into pipe-separated rows:
-#   name|disk_gb|peak_rss_gb|expected_tps|default
-parse_models() {
-  awk '
-    /^max_rss_gb:/ { print "BUDGET|" $2; next }
-    /^  - name:/   { if (name != "") emit(); name=$3; disk=""; rss=""; tps=""; def="false"; next }
-    /^    disk_gb:/      { disk=$2; next }
-    /^    peak_rss_gb:/  { rss=$2;  next }
-    /^    expected_tps:/ { tps=$2;  next }
-    /^    default: true/ { def="true"; next }
-    END { if (name != "") emit() }
-    function emit() { print name "|" disk "|" rss "|" tps "|" def }
-  ' "$MODELS_YAML"
-}
-
-BUDGET_GB="$(parse_models | awk -F'|' '$1=="BUDGET"{print $2}')"
-[ -n "$BUDGET_GB" ] || die "models.yaml is missing max_rss_gb"
-
-# Effective budget: min(max_rss_gb, memory - 5GB reserved for macOS), so a
-# smaller machine automatically tightens the registry's tuned budget.
-EFFECTIVE_BUDGET_GB="$(awk -v b="$BUDGET_GB" -v m="$MEM_GB" 'BEGIN{u=m-5; if(u<0)u=0; print (u<b)?u:b}')"
-log "RSS budget: ${EFFECTIVE_BUDGET_GB}GB effective (max_rss_gb=${BUDGET_GB}, ${MEM_GB}GB memory - 5GB reserved for macOS)"
-
-# fit_of <peak_rss>: comfortable / tight / no-fit against the effective budget.
-fit_of() {
-  awk -v r="$1" -v b="$EFFECTIVE_BUDGET_GB" 'BEGIN{
-    if (r <= b - 1.5)      print "comfortable";
-    else if (r <= b)       print "tight";
-    else                   print "no-fit";
-  }'
-}
-
-# The recommended model: heaviest comfortable fit (peak RSS tracks quality)
-# with enough free disk; fastest pick: highest expected tok/s that fits.
-RECOMMENDED=""
-FASTEST=""
-best_rss=0
-best_tps=0
-while IFS='|' read -r name disk rss tps def; do
-  [ "$name" = "BUDGET" ] && continue
-  [ "$(fit_of "$rss")" = "comfortable" ] || continue
-  disk_ok="$(awk -v f="$DISK_FREE_GB" -v d="$disk" 'BEGIN{print (f >= d+2) ? 1 : 0}')"
-  [ "$disk_ok" -eq 1 ] || continue
-  if awk -v a="$rss" -v b="$best_rss" 'BEGIN{exit !(a>b)}'; then best_rss="$rss"; RECOMMENDED="$name"; fi
-  if awk -v a="$tps" -v b="$best_tps" 'BEGIN{exit !(a>b)}'; then best_tps="$tps"; FASTEST="$name"; fi
-done < <(parse_models)
-if [ -z "$RECOMMENDED" ]; then
-  warn "no registry model fits this machine comfortably (memory or disk) — see the summary table below for what to free up."
-fi
-
-# ---------------------------------------------------------------- pull models
-in_only_list() {
-  [ -z "$ONLY_MODELS" ] && return 0
-  case ",$ONLY_MODELS," in *",$1,"*) return 0 ;; *) return 1 ;; esac
-}
-
-PULLED=""
-SKIPPED_BUDGET=""
-SKIPPED_DISK=""
-SKIPPED_PULL=""
-while IFS='|' read -r name disk rss tps def; do
-  [ "$name" = "BUDGET" ] && continue
-  if [ -n "$ONLY_MODELS" ]; then
-    in_only_list "$name" || continue
-  else
-    [ "$def" = "true" ] || continue
-  fi
-
-  over_budget="$(awk -v r="$rss" -v b="$EFFECTIVE_BUDGET_GB" 'BEGIN{print (r>b) ? 1 : 0}')"
-  if [ "$over_budget" -eq 1 ]; then
-    needed_mem="$(awk -v r="$rss" 'BEGIN{printf "%.0f", r+5}')"
-    warn "REFUSING to pull $name: peak RSS ${rss}GB exceeds the ${EFFECTIVE_BUDGET_GB}GB budget — this model needs a ~${needed_mem}GB machine"
-    SKIPPED_BUDGET="$SKIPPED_BUDGET $name"
-    continue
-  fi
-
-  disk_short="$(awk -v f="$DISK_FREE_GB" -v d="$disk" 'BEGIN{s=d+2-f; if(s>0) printf "%.1f", s; else print 0}')"
-  if [ "$disk_short" != "0" ]; then
-    warn "NOT ENOUGH DISK for $name: needs ${disk}GB + 2GB headroom, only ${DISK_FREE_GB}GB free — free up at least ${disk_short}GB and re-run"
-    SKIPPED_DISK="$SKIPPED_DISK $name"
-    continue
-  fi
-
-  if [ "$DRY_RUN" -eq 0 ] && ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
-    log "$name already pulled"
-  elif [ "$DRY_RUN" -eq 1 ]; then
-    log "pulling $name (${disk}GB on disk)"
-    run ollama pull "$name"
-  else
-    log "pulling $name (${disk}GB on disk)"
-    if ! pull_model "$name"; then
-      warn "could not pull $name — continuing with the rest"
-      SKIPPED_PULL="$SKIPPED_PULL $name"
-      continue
-    fi
-  fi
-  PULLED="$PULLED $name"
-done < <(parse_models)
-
-[ -n "$PULLED" ] || warn "no models pulled (check --models spelling against models.yaml)"
-
 # ---------------------------------------------------------------- env + PATH
 ENV_FILE="$HOME/.brokemode/env"
 log "writing $ENV_FILE"
@@ -488,54 +346,27 @@ else
   warn "unrecognized shell '$(basename "${SHELL:-}")' — add this line to its rc file yourself: source ~/.brokemode/env"
 fi
 
-# ---------------------------------------------------------------- summary
-printf '\n'
-
-printf '%-14s %10s %12s %14s %-12s %s\n' "MODEL" "DISK(GB)" "PEAK RSS(GB)" "EXPECTED TOK/S" "FIT" "STATUS"
-printf '%-14s %10s %12s %14s %-12s %s\n' "-----" "--------" "------------" "--------------" "---" "------"
-while IFS='|' read -r name disk rss tps def; do
-  [ "$name" = "BUDGET" ] && continue
-  status="registry"
-  case " $PULLED "         in *" $name "*) status="pulled" ;; esac
-  case " $SKIPPED_BUDGET " in *" $name "*) status="OVER BUDGET" ;; esac
-  case " $SKIPPED_DISK "   in *" $name "*) status="NEEDS DISK" ;; esac
-  case " $SKIPPED_PULL "   in *" $name "*) status="PULL FAILED" ;; esac
-  fit="$(fit_of "$rss")"
-  marker=""
-  [ "$name" = "$FASTEST" ] && marker="  <- fastest"
-  [ "$name" = "$RECOMMENDED" ] && marker="  <- recommended"
-  printf '%-14s %10s %12s %14s %-12s %s%s\n' "$name" "$disk" "$rss" "$tps" "$fit" "$status" "$marker"
-done < <(parse_models)
-printf '\n'
-if [ -n "$RECOMMENDED" ]; then
-  log "recommended for this machine: $RECOMMENDED"
-  [ -n "$FASTEST" ] && [ "$FASTEST" != "$RECOMMENDED" ] && log "fast lane: $FASTEST"
-else
-  warn "nothing fits comfortably yet — free up memory/disk (see warnings above), then run 'brokemode doctor'."
-fi
-
-BENCH_MODEL="${RECOMMENDED:-<model>}"
+# ---------------------------------------------------------------- done
 cat <<EOF
 
 ──────────────────────────────────────────────────────────────
- NEXT STEPS   (brokemode is already on your PATH; the gateway
-              vars land in new terminals via ~/.brokemode/env —
-              current terminal: source ~/.brokemode/env)
-──────────────────────────────────────────────────────────────
- 1. Check what this machine can run:
+ brokemode is installed and on your PATH.
 
-      brokemode doctor
+ Just run:
 
- 2. Benchmark the recommended model (fills results/summary.md):
+      brokemode
 
-      brokemode bench --model ${BENCH_MODEL}
+ It shows how Claude model names map onto local models, pulls
+ what fits this machine, and launches Claude Code with every
+ env var preconfigured. Other doors into the same house:
 
- 3. Start the gateway + dashboard, then point Claude Code at it:
+      brokemode doctor    what can this machine run?
+      brokemode pull      download the recommended model
+      brokemode serve     gateway :9100 + dashboard :9101
+      brokemode update    self-update the binary
 
-      brokemode serve          # gateway :9100, dashboard http://127.0.0.1:9101
-
-      # in another terminal (env already set by ~/.brokemode/env):
-      claude
+ (Gateway vars land in new terminals via ~/.brokemode/env; for
+ this one: source ~/.brokemode/env)
 
  Re-running this installer is always safe (idempotent).
  Uninstall: rm -rf ~/.brokemode, remove the brokemode lines from

@@ -80,21 +80,16 @@
       <div class="kicker">First steps</div>
       <h2>Doctor, bench, serve.</h2>
     </div>
-    <div class="quickstart"><span class="comment"># the installer already put brokemode on PATH and wired new terminals;
-# only the terminal you installed from needs this once:</span>
-<span class="prompt">$</span> source ~/.brokemode/env
+    <div class="quickstart"><span class="comment"># the launcher: model mapping, pull, doctor, dashboard, self-update —
+# and "Launch Claude Code" with the gateway + env fully preconfigured</span>
+<span class="prompt">$</span> brokemode
 
-<span class="comment"># what can THIS machine run?</span>
-<span class="prompt">$</span> brokemode doctor
-
-<span class="comment"># benchmark the recommended model (median/p95 into results/summary.md)</span>
-<span class="prompt">$</span> brokemode bench --model qwen3.5:9b
-
-<span class="comment"># gateway :9100 + web dashboard http://127.0.0.1:9101</span>
-<span class="prompt">$</span> brokemode serve
-
-<span class="comment"># terminal dashboard</span>
-<span class="prompt">$</span> brokemode tui</div>
+<span class="comment"># every door is also its own command</span>
+<span class="prompt">$</span> brokemode doctor            <span class="comment"># what can THIS machine run?</span>
+<span class="prompt">$</span> brokemode pull              <span class="comment"># download the recommended model</span>
+<span class="prompt">$</span> brokemode bench             <span class="comment"># median/p95 into results/summary.md</span>
+<span class="prompt">$</span> brokemode serve             <span class="comment"># gateway :9100 + dashboard :9101</span>
+<span class="prompt">$</span> brokemode update            <span class="comment"># self-update from the latest release</span></div>
     <p class="muted" style="margin-top: 16px; max-width: 640px;">
       For full GPU and power telemetry during benchmarks, run <code>sudo -v</code>
       first — <code>powermetrics</code> needs root. Without it the run still

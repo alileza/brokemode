@@ -59,10 +59,9 @@ What the installer does, in order — re-running it is always safe:
    when they disagree. `doctor`, `bench`, and the gateway re-check the
    server version at run time (bench refuses against an outdated server).
 5. Seeds `~/.brokemode/models.yaml` from the binary's embedded registry
-   (edit it there; the binary prefers the on-disk copy) and pulls every
-   model marked `default: true` that fits this machine's memory budget and
-   disk — anything that doesn't fit is skipped with a loud reason, never
-   silently.
+   (edit it there; the binary prefers the on-disk copy). Model pulls
+   happen in the binary — the launcher or `brokemode pull` — where
+   they're budget-checked with loud reasons, never silent skips.
 6. Puts `brokemode` **on your PATH immediately** (a symlink into brew's
    bin, so it works in the same terminal) and wires
    `source ~/.brokemode/env` into your shell rc idempotently — new
@@ -73,14 +72,28 @@ What the installer does, in order — re-running it is always safe:
    values you export yourself win, and commenting the two `ANTHROPIC_*`
    lines out of `~/.brokemode/env` keeps Claude Code on the real API.
 
-Then:
+Then just:
 
 ```sh
-source ~/.brokemode/env
+brokemode
+```
+
+Bare `brokemode` opens a launcher (think `ollama`'s): it shows how Claude
+model names map onto local models — with pulled status and this machine's
+fit verdicts — explains that the mapping lives in
+`~/.brokemode/models.yaml`, and offers to **launch Claude Code** with the
+gateway started and every env var preconfigured. Also on the menu: pull
+the recommended model, doctor, the dashboard, and self-update.
+
+Every door is also its own command:
+
+```sh
 brokemode doctor                # what can THIS machine run? warnings + picks
+brokemode pull                  # download the recommended model (or: pull <name>)
 brokemode bench                 # 3 warmup + 5 measured runs per prompt, median/p95
 brokemode serve                 # gateway :9100 + dashboard/metrics :9101
 brokemode tui                   # terminal dashboard, 1Hz
+brokemode update                # self-update the binary from the latest release
 brokemode models                # registry + budget verdicts
 ```
 

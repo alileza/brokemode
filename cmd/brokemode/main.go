@@ -54,6 +54,14 @@ func main() {
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Bare `brokemode` on a terminal opens the launcher; piped or
+			// scripted invocations get the normal help.
+			if stdinIsTTY() {
+				return runLauncher(cmd)
+			}
+			return cmd.Help()
+		},
 	}
 	root.PersistentFlags().StringVar(&flagModelsYAML, "models-yaml", "", "path to models.yaml (default: CWD, binary dir, ~/.brokemode, embedded)")
 	root.PersistentFlags().StringVar(&flagOllamaHost, "ollama-host", "", "Ollama base URL (default: $OLLAMA_HOST or http://127.0.0.1:11434)")
@@ -64,6 +72,8 @@ func main() {
 	root.AddCommand(newTUICmd())
 	root.AddCommand(newModelsCmd())
 	root.AddCommand(newDoctorCmd())
+	root.AddCommand(newPullCmd())
+	root.AddCommand(newUpdateCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "brokemode: %v\n", err)
