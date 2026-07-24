@@ -24,8 +24,9 @@ type Model struct {
 
 // Registry is the parsed models.yaml plus the global RSS budget.
 type Registry struct {
-	MaxRSSGB float64 `yaml:"max_rss_gb"`
-	Models   []Model `yaml:"models"`
+	MaxRSSGB         float64 `yaml:"max_rss_gb"`
+	MinOllamaVersion string  `yaml:"min_ollama_version"`
+	Models           []Model `yaml:"models"`
 }
 
 // Load reads and validates a models.yaml file.

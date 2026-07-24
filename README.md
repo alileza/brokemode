@@ -44,12 +44,19 @@ What the installer does, in order — re-running it is always safe:
    registry, the web dashboard, and the bench prompt suite are all
    compiled in via `embed.FS`. From a checkout it `go build`s instead.
    Either way the binary is smoke-tested before anything else happens.
-4. Seeds `~/.brokemode/models.yaml` from the binary's embedded registry
+4. Checks the registry's `min_ollama_version`: if the installed Ollama is
+   older, it **offers to `brew upgrade ollama` on the spot** (`--yes`
+   auto-accepts), then verifies the *running daemon* reports the same
+   version as the CLI — brew upgrades the binary, but the stale daemon
+   keeps answering until restarted, so the installer restarts the service
+   when they disagree. `doctor`, `bench`, and the gateway re-check the
+   server version at run time (bench refuses against an outdated server).
+5. Seeds `~/.brokemode/models.yaml` from the binary's embedded registry
    (edit it there; the binary prefers the on-disk copy) and pulls every
    model marked `default: true` that fits this machine's memory budget and
    disk — anything that doesn't fit is skipped with a loud reason, never
    silently.
-5. Writes `~/.brokemode/env` and prints a summary table (fit verdicts,
+6. Writes `~/.brokemode/env` and prints a summary table (fit verdicts,
    recommended + fastest picks) followed by numbered next steps:
 
 ```sh
@@ -195,6 +202,11 @@ headroom, and watch the compressed-pages line in the TUI.
   all four platform binaries.
 - **"is ollama running?"** on any command — `brew services start ollama`,
   then `ollama list` to confirm the daemon answers.
+- **"ollama server vX is older than the required vY"** — the registry needs
+  a newer Ollama. Re-run `./install.sh` (it offers the upgrade and restarts
+  the daemon), or manually: `brew upgrade ollama && brew services restart
+  ollama`. The daemon restart matters: an upgraded CLI with a stale daemon
+  is exactly the inconsistency this check exists to catch.
 - **GPU/power columns empty, run marked PARTIAL** — `powermetrics` needs
   root. Run `sudo -v` right before `brokemode bench`, or add a NOPASSWD
   sudoers rule for `/usr/bin/powermetrics`. Everything else still works.

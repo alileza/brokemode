@@ -27,15 +27,33 @@ run()  {
   fi
 }
 
+ASSUME_YES=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1 ;;
+    --yes|-y)  ASSUME_YES=1 ;;
     --models)  ONLY_MODELS="${2:-}"; shift ;;
     --models=*) ONLY_MODELS="${1#--models=}" ;;
-    *) die "unknown flag: $1 (supported: --dry-run, --models a,b,c)" ;;
+    *) die "unknown flag: $1 (supported: --dry-run, --yes, --models a,b,c)" ;;
   esac
   shift
 done
+
+# confirm <question>: yes on --yes; otherwise ask on the terminal — /dev/tty
+# still works when the script itself arrives on stdin via curl | bash.
+confirm() {
+  [ "$ASSUME_YES" -eq 1 ] && return 0
+  local ans=""
+  if [ -t 0 ]; then
+    read -r -p "$1 [Y/n] " ans
+  elif [ -r /dev/tty ]; then
+    read -r -p "$1 [Y/n] " ans < /dev/tty
+  else
+    warn "no terminal available to ask: $1 — assuming yes (pass --yes to silence this)"
+    return 0
+  fi
+  case "$ans" in n|N|no|NO) return 1 ;; *) return 0 ;; esac
+}
 
 # ---------------------------------------------------------------- platform
 [ "$(uname -s)" = "Darwin" ] || die "brokemode targets macOS on Apple Silicon; detected $(uname -s). Nothing was changed."
@@ -143,6 +161,91 @@ if [ "$DRY_RUN" -eq 0 ]; then
   [ "$MODELS_YAML" = "$HOME/.brokemode/models.yaml" ] || cp "$MODELS_YAML" "$HOME/.brokemode/models.yaml"
   log "installed registry to ~/.brokemode/models.yaml"
 fi
+
+# ---------------------------------------------------------------- ollama version
+# The registry states the minimum Ollama it needs. If the installed client
+# is older, offer a brew upgrade; afterwards make sure the running daemon
+# actually matches the client (brew upgrades the binary but the old daemon
+# keeps running until restarted).
+OLLAMA_API="${OLLAMA_HOST:-http://127.0.0.1:11434}"
+
+vercmp() { # vercmp a b -> echoes -1/0/1 comparing dotted versions
+  awk -v a="${1#v}" -v b="${2#v}" 'BEGIN{
+    sub(/[-+].*/,"",a); sub(/[-+].*/,"",b);
+    n=split(a,x,"."); m=split(b,y,".");
+    for(i=1;i<=3;i++){ xa=(i<=n)?x[i]+0:0; yb=(i<=m)?y[i]+0:0;
+      if(xa<yb){print -1; exit} if(xa>yb){print 1; exit} }
+    print 0 }'
+}
+
+client_version() { ollama --version 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)+' | head -1; }
+server_version() { curl -fsS --max-time 3 "$OLLAMA_API/api/version" 2>/dev/null | jq -r '.version // empty' 2>/dev/null; }
+
+wait_for_server() { # wait_for_server [expected_version]
+  for _ in $(seq 1 20); do
+    sv="$(server_version)"
+    if [ -n "$sv" ] && { [ -z "${1:-}" ] || [ "$sv" = "$1" ]; }; then
+      echo "$sv"; return 0
+    fi
+    sleep 1
+  done
+  echo "${sv:-}"; return 1
+}
+
+ensure_ollama_version() {
+  local min="$1"
+  [ -n "$min" ] || return 0
+  local cv sv
+  cv="$(client_version)"
+  if [ -z "$cv" ]; then
+    warn "could not read 'ollama --version'; skipping the version check"
+    return 0
+  fi
+
+  if [ "$(vercmp "$cv" "$min")" -lt 0 ]; then
+    warn "installed ollama v$cv is older than the v$min this registry requires"
+    if [ "$DRY_RUN" -eq 1 ]; then
+      printf '\033[2m[dry-run]\033[0m brew upgrade ollama && brew services restart ollama\n'
+      return 0
+    fi
+    if confirm "Upgrade ollama via 'brew upgrade ollama' now?"; then
+      brew upgrade ollama || die "brew upgrade ollama failed"
+      cv="$(client_version)"
+      if [ "$(vercmp "$cv" "$min")" -lt 0 ]; then
+        die "ollama is still v$cv after the upgrade; v$min is required. Homebrew may not have a newer bottle yet — check https://github.com/ollama/ollama/releases"
+      fi
+      log "ollama client upgraded to v$cv"
+    else
+      die "ollama v$min or newer is required. Upgrade with: brew upgrade ollama && brew services restart ollama"
+    fi
+  else
+    log "ollama client v$cv satisfies the required v$min"
+  fi
+
+  [ "$DRY_RUN" -eq 1 ] && return 0
+
+  # Client/daemon consistency: the API must answer with the same version
+  # as the CLI, otherwise requests run against a stale daemon.
+  sv="$(server_version)"
+  if [ -z "$sv" ]; then
+    log "waiting for the ollama server to answer on $OLLAMA_API"
+    sv="$(wait_for_server || true)"
+  fi
+  if [ "$sv" != "$cv" ]; then
+    warn "ollama daemon is v${sv:-not responding} but the client is v$cv — restarting the service to match"
+    brew services restart ollama >/dev/null 2>&1 || brew services start ollama >/dev/null 2>&1 || true
+    sv="$(wait_for_server "$cv" || true)"
+    if [ "$sv" != "$cv" ]; then
+      die "ollama daemon still reports v${sv:-nothing} after restart (client v$cv). Try: brew services restart ollama, then re-run this installer."
+    fi
+    log "ollama daemon restarted; client and server are both v$cv"
+  else
+    log "ollama daemon v$sv matches the client"
+  fi
+}
+
+MIN_OLLAMA="$(awk '/^min_ollama_version:/ { gsub(/"/,"",$2); print $2 }' "$MODELS_YAML")"
+ensure_ollama_version "$MIN_OLLAMA"
 
 # Parse our (fixed-shape) models.yaml with awk into pipe-separated rows:
 #   name|disk_gb|peak_rss_gb|expected_tps|default

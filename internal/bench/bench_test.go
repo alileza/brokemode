@@ -23,6 +23,7 @@ type fakeOllama struct {
 	generateCalls atomic.Int64
 	chatCalls     atomic.Int64
 	decayPerCall  float64 // fraction knocked off decode rate per generate call
+	version       string  // /api/version reply; empty = endpoint absent
 }
 
 const baseEvalCount = 100
@@ -45,6 +46,11 @@ func (f *fakeOllama) timing(call int64) map[string]any {
 
 func (f *fakeOllama) handler() http.Handler {
 	mux := http.NewServeMux()
+	if f.version != "" {
+		mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(map[string]string{"version": f.version})
+		})
+	}
 	mux.HandleFunc("/api/generate", func(w http.ResponseWriter, r *http.Request) {
 		var req ollama.GenerateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -227,6 +233,44 @@ models:
 	}
 	if fake.generateCalls.Load() != 0 {
 		t.Error("no requests may reach ollama for an over-budget model")
+	}
+}
+
+func TestOllamaVersionGate(t *testing.T) {
+	regYAML := `
+max_rss_gb: 11
+min_ollama_version: "0.9.0"
+models:
+  - name: testmodel:1b
+    num_ctx: 4096
+    peak_rss_gb: 2.0
+`
+	newVersionedRunner := func(t *testing.T, version string) (*Runner, *fakeOllama) {
+		t.Helper()
+		fake := &fakeOllama{version: version}
+		srv := httptest.NewServer(fake.handler())
+		t.Cleanup(srv.Close)
+		reg, err := registry.Parse([]byte(regYAML))
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, _ := reg.Resolve("testmodel:1b")
+		return &Runner{Client: ollama.New(srv.URL), Registry: reg, Model: m, Warmups: 1, Measured: 1}, fake
+	}
+
+	// Confirmed-old server: refuse before any generate call.
+	r, fake := newVersionedRunner(t, "0.8.0")
+	if _, err := r.Run(context.Background()); err == nil || !strings.Contains(err.Error(), "brew upgrade ollama") {
+		t.Fatalf("want version refusal, got %v", err)
+	}
+	if fake.generateCalls.Load() != 0 {
+		t.Error("no requests may reach an outdated ollama")
+	}
+
+	// Satisfying server: runs normally.
+	r, _ = newVersionedRunner(t, "0.9.0")
+	if _, err := r.Run(context.Background()); err != nil {
+		t.Fatalf("matching version must run: %v", err)
 	}
 }
 

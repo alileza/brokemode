@@ -47,7 +47,7 @@
         </tr>
         <tr>
           <td class="req-name">Homebrew</td>
-          <td class="req-note"><a href="https://brew.sh">brew.sh</a> — used to install and run Ollama as a service.</td>
+          <td class="req-note"><a href="https://brew.sh">brew.sh</a> — used to install and run Ollama as a service. The registry declares a minimum Ollama version; if yours is older the installer offers the upgrade and restarts the daemon so client and server match.</td>
         </tr>
         <tr>
           <td class="req-name">~10GB free disk</td>
@@ -134,6 +134,10 @@
         <tr>
           <td class="req-name">"is ollama running?"</td>
           <td class="req-note"><code>brew services start ollama</code>, then confirm with <code>ollama list</code>.</td>
+        </tr>
+        <tr>
+          <td class="req-name">"ollama server vX is older than required vY"</td>
+          <td class="req-note">Re-run the installer (it offers the upgrade), or <code>brew upgrade ollama &amp;&amp; brew services restart ollama</code> — the restart matters, or the stale daemon keeps answering.</td>
         </tr>
         <tr>
           <td class="req-name">"NOT ENOUGH DISK" / "REFUSING to pull"</td>

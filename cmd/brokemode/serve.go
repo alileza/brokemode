@@ -44,6 +44,7 @@ disable with --gateway=false if you run 'brokemode gateway' separately.`,
 			defer cancel()
 			go collector.Run(ctx, sharedMetrics.UpdateHostGauges)
 
+			warnOllamaVersion(ollama.New(flagOllamaHost), reg)
 			if withGateway {
 				gw := &gateway.Server{
 					Client:   ollama.New(flagOllamaHost),

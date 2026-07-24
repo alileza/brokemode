@@ -140,6 +140,15 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	if err := r.Registry.CheckBudget(r.Model); err != nil {
 		return nil, err
 	}
+	// A confirmed-too-old server produces misleading numbers (or fails on
+	// tool calls) — refuse. An unreadable version is only a warning; the
+	// first real request will surface a dead server anyway.
+	if v, err := r.Client.CheckServerVersion(ctx, r.Registry.MinOllamaVersion); err != nil {
+		if v != "" {
+			return nil, err
+		}
+		r.logf("!!! WARNING: could not verify the ollama server version: %v", err)
+	}
 	if r.Warmups == 0 {
 		r.Warmups = 3
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/sys/unix"
 
+	"github.com/alileza/brokemode/internal/ollama"
 	"github.com/alileza/brokemode/internal/recommend"
 	"github.com/alileza/brokemode/internal/telemetry"
 )
@@ -28,6 +29,18 @@ func newDoctorCmd() *cobra.Command {
 			}
 			host := gatherHost(cmd.Context())
 			a := recommend.For(host, reg)
+
+			vctx, vcancel := context.WithTimeout(cmd.Context(), 3*time.Second)
+			defer vcancel()
+			ollamaVer, verErr := ollama.New(flagOllamaHost).CheckServerVersion(vctx, reg.MinOllamaVersion)
+			switch {
+			case verErr == nil && ollamaVer != "":
+				fmt.Printf("ollama server: v%s (>= v%s required)\n", ollamaVer, reg.MinOllamaVersion)
+			case verErr != nil && ollamaVer != "":
+				a.Warnings = append(a.Warnings, verErr.Error())
+			case verErr != nil:
+				a.Warnings = append(a.Warnings, fmt.Sprintf("ollama server unreachable: %v", verErr))
+			}
 
 			fmt.Printf("machine: %.0fGB unified memory, %d cores, %.1fGB free disk\n",
 				host.TotalMemGB, host.CPUCores, host.FreeDiskGB)

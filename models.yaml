@@ -6,6 +6,11 @@
 # your decode rate.
 max_rss_gb: 11
 
+# Minimum Ollama version the registry's models and the gateway's tool
+# calling require. install.sh offers a brew upgrade when the installed
+# client is older, and the CLI warns/refuses when the running server is.
+min_ollama_version: "0.9.0"
+
 models:
   - name: qwen3.5:9b
     quantization: Q4_K_M
