@@ -38,6 +38,7 @@ func main() {
 	root.PersistentFlags().StringVar(&flagOllamaHost, "ollama-host", "", "Ollama base URL (default: $OLLAMA_HOST or http://127.0.0.1:11434)")
 
 	root.AddCommand(newBenchCmd())
+	root.AddCommand(newGatewayCmd())
 	root.AddCommand(newModelsCmd())
 
 	if err := root.Execute(); err != nil {
