@@ -112,7 +112,11 @@ func toOllamaChat(req *MessagesRequest, model *registry.Model) (*ollama.ChatRequ
 
 	names := toolNameByID(req.Messages)
 	for i, m := range req.Messages {
-		if m.Role != "user" && m.Role != "assistant" {
+		// Claude Code also puts system-role messages inside the array
+		// (context injections), not just the top-level system field —
+		// Ollama accepts system messages at any position, so pass them
+		// through in order.
+		if m.Role != "user" && m.Role != "assistant" && m.Role != "system" {
 			return nil, fmt.Errorf("messages[%d]: unsupported role %q", i, m.Role)
 		}
 		blocks, err := contentBlocks(m.Content)

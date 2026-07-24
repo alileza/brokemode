@@ -575,6 +575,37 @@ func TestMetricsInstrumentation(t *testing.T) {
 	}
 }
 
+func TestSystemRoleInMessagesArray(t *testing.T) {
+	// Claude Code sends system-role entries inside messages[] on top of
+	// the top-level system field; both must reach Ollama, in order.
+	srv, fake, _ := newTestServer(t, func(ollama.ChatRequest) chunkScript {
+		return chunkScript{doneChunk("ok", nil, "stop")}
+	})
+	resp := post(t, srv, `{"model":"sonnet","max_tokens":10,
+		"system":"top-level system",
+		"messages":[
+		  {"role":"user","content":"hi"},
+		  {"role":"system","content":"mid-conversation system reminder"},
+		  {"role":"user","content":"hello again"}
+		]}`, nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	roles := make([]string, len(fake.lastReq.Messages))
+	for i, m := range fake.lastReq.Messages {
+		roles[i] = m.Role
+	}
+	want := []string{"system", "user", "system", "user"}
+	if !equalStrings(roles, want) {
+		t.Fatalf("ollama message roles = %v, want %v", roles, want)
+	}
+	if !strings.Contains(fake.lastReq.Messages[2].Content, "reminder") {
+		t.Errorf("mid-array system content lost: %+v", fake.lastReq.Messages[2])
+	}
+}
+
 func TestStopReasonMapping(t *testing.T) {
 	tests := []struct {
 		doneReason string
