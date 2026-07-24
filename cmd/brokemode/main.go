@@ -39,6 +39,8 @@ func main() {
 
 	root.AddCommand(newBenchCmd())
 	root.AddCommand(newGatewayCmd())
+	root.AddCommand(newServeCmd())
+	root.AddCommand(newTUICmd())
 	root.AddCommand(newModelsCmd())
 
 	if err := root.Execute(); err != nil {

@@ -1,0 +1,11 @@
+# build artifacts
+/brokemode
+web/dist/
+web/node_modules/
+
+# benchmark output
+results/
+
+# local env
+.DS_Store
+*.log
