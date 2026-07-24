@@ -15,7 +15,7 @@
     <span class="name">brokemode</span>
   </a>
   <nav class="links">
-    <a href="./">Background</a>
+    <a href="./">Overview</a>
     <a href="getting-started.html">Getting started</a>
     <a href="architecture.html" class="active">Architecture</a>
     <a href="https://github.com/alileza/brokemode" class="primary">GitHub →</a>
@@ -61,35 +61,91 @@
       <h2>Everything observes; one place aggregates.</h2>
       <p>Telemetry samplers feed a shared metrics registry alongside per-request gateway numbers; <code>brokemode serve</code> exposes all of it three ways at once.</p>
     </div>
-    <div class="preview flat" aria-label="Component diagram">
-      <div class="titlebar">
-        <span class="dot red"></span>
-        <span class="dot yellow"></span>
-        <span class="dot green"></span>
-        <span class="title">component diagram</span>
-      </div>
-      <pre>┌─────────────┐   Messages API    ┌─────────────────────────┐    /api/chat     ┌─────────┐
-│ <span class="cmd">Claude Code</span> │ ────────────────▶ │ <span class="cmd">gateway :9100</span>           │ ───────────────▶ │ <span class="cmd">Ollama</span>  │
-│  (or curl)  │ ◀──────────────── │ auth · translate ·      │ ◀─────────────── │ :11434  │
-└─────────────┘    SSE stream     │ instrument each request │   NDJSON stream  └─────────┘
-                                  └────────────┬────────────┘
-                                               │ <span class="dim">TTFT · tok/s · tokens · peak RSS</span>
-                                               ▼
- ┌────────────────────┐  1Hz snapshots  ┌─────────────────────────┐
- │ <span class="cmd">telemetry samplers</span> │ ──────────────▶ │ <span class="cmd">metrics registry</span>        │
- │ powermetrics · ps  │                 │ prometheus series +     │
- │ vm_stat · pmset ·  │                 │ recent-request ring     │
- │ memory_pressure    │                 └────────────┬────────────┘
- └────────────────────┘                              │
-            ▲                                        ▼
- ┌──────────┴─────┐                 ┌───────────────────────────────────┐
- │ <span class="cmd">brokemode tui</span>  │ ◀── snapshot ── │ <span class="cmd">brokemode serve :9101</span>             │
- │ (bubbletea)    │                 │  /           embedded React SPA   │
- └────────────────┘                 │  /metrics    Prometheus scrape    │
-                                    │  /api/stream 1Hz SSE feed         │
-                                    └───────────────────────────────────┘
-                                          ▲                   ▲
-                                      <span class="dim">browser</span>       <span class="dim">Grafana / Prometheus</span></pre>
+    <div class="card" style="padding: 28px;" aria-label="Component diagram">
+      <svg viewBox="0 0 960 640" width="100%" role="img"
+           aria-label="brokemode component diagram: Claude Code talks to the gateway on port 9100, which talks to Ollama; gateway metrics and 1Hz telemetry meet in the metrics registry, exposed by brokemode serve on port 9101 to the browser, Grafana, and the TUI"
+           font-family="-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#9ca4ad"/>
+          </marker>
+          <marker id="arrb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#0057ff"/>
+          </marker>
+        </defs>
+
+        <!-- row 1: request path -->
+        <rect x="20" y="30" width="180" height="84" rx="12" fill="#ffffff" stroke="rgba(0,42,97,0.18)"/>
+        <text x="110" y="66" text-anchor="middle" font-size="14" font-weight="700" fill="#0a0d12">Claude Code</text>
+        <text x="110" y="88" text-anchor="middle" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">(or curl)</text>
+
+        <rect x="340" y="30" width="280" height="84" rx="12" fill="rgba(0,87,255,0.04)" stroke="rgba(0,87,255,0.35)"/>
+        <text x="480" y="60" text-anchor="middle" font-size="14" font-weight="700" fill="#0a0d12">gateway <tspan fill="#0057ff">:9100</tspan></text>
+        <text x="480" y="82" text-anchor="middle" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">auth · translate · instrument</text>
+        <text x="480" y="100" text-anchor="middle" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">every request measured</text>
+
+        <rect x="760" y="30" width="180" height="84" rx="12" fill="#ffffff" stroke="rgba(0,42,97,0.18)"/>
+        <text x="850" y="66" text-anchor="middle" font-size="14" font-weight="700" fill="#0a0d12">Ollama <tspan fill="#0057ff">:11434</tspan></text>
+        <text x="850" y="88" text-anchor="middle" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">model runner</text>
+
+        <line x1="204" y1="56" x2="334" y2="56" stroke="#0057ff" stroke-width="1.5" marker-end="url(#arrb)"/>
+        <text x="269" y="46" text-anchor="middle" font-size="11" fill="#0057ff" font-family="ui-monospace, Menlo, monospace">Messages API</text>
+        <line x1="334" y1="92" x2="204" y2="92" stroke="#9ca4ad" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="269" y="110" text-anchor="middle" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">SSE stream</text>
+
+        <line x1="624" y1="56" x2="754" y2="56" stroke="#0057ff" stroke-width="1.5" marker-end="url(#arrb)"/>
+        <text x="689" y="46" text-anchor="middle" font-size="11" fill="#0057ff" font-family="ui-monospace, Menlo, monospace">/api/chat</text>
+        <line x1="754" y1="92" x2="624" y2="92" stroke="#9ca4ad" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="689" y="110" text-anchor="middle" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">NDJSON stream</text>
+
+        <!-- gateway -> metrics -->
+        <line x1="480" y1="114" x2="480" y2="234" stroke="#9ca4ad" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="494" y="180" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">TTFT · tok/s · tokens · peak RSS</text>
+
+        <!-- row 2: telemetry + metrics -->
+        <rect x="20" y="240" width="240" height="104" rx="12" fill="#ffffff" stroke="rgba(0,42,97,0.18)"/>
+        <text x="140" y="270" text-anchor="middle" font-size="14" font-weight="700" fill="#0a0d12">telemetry samplers</text>
+        <text x="140" y="292" text-anchor="middle" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">powermetrics · vm_stat · ps</text>
+        <text x="140" y="310" text-anchor="middle" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">memory_pressure · pmset</text>
+        <text x="140" y="330" text-anchor="middle" font-size="11" fill="#9ca4ad" font-family="ui-monospace, Menlo, monospace">macOS host, 1Hz</text>
+
+        <rect x="340" y="240" width="280" height="104" rx="12" fill="rgba(0,87,255,0.04)" stroke="rgba(0,87,255,0.35)"/>
+        <text x="480" y="276" text-anchor="middle" font-size="14" font-weight="700" fill="#0a0d12">metrics registry</text>
+        <text x="480" y="298" text-anchor="middle" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">Prometheus series</text>
+        <text x="480" y="316" text-anchor="middle" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">recent-request ring buffer</text>
+
+        <line x1="264" y1="292" x2="334" y2="292" stroke="#9ca4ad" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="299" y="282" text-anchor="middle" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">1Hz</text>
+
+        <!-- metrics -> serve -->
+        <line x1="480" y1="344" x2="480" y2="414" stroke="#9ca4ad" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- row 3: tui + serve -->
+        <rect x="20" y="420" width="240" height="120" rx="12" fill="#ffffff" stroke="rgba(0,42,97,0.18)"/>
+        <text x="140" y="466" text-anchor="middle" font-size="14" font-weight="700" fill="#0a0d12">brokemode tui</text>
+        <text x="140" y="488" text-anchor="middle" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">bubbletea · 1Hz refresh</text>
+
+        <rect x="340" y="420" width="340" height="120" rx="12" fill="rgba(0,87,255,0.04)" stroke="rgba(0,87,255,0.35)"/>
+        <text x="510" y="450" text-anchor="middle" font-size="14" font-weight="700" fill="#0a0d12">brokemode serve <tspan fill="#0057ff">:9101</tspan></text>
+        <text x="368" y="478" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">/            embedded React dashboard</text>
+        <text x="368" y="498" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">/metrics     Prometheus scrape</text>
+        <text x="368" y="518" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">/api/stream  1Hz SSE feed</text>
+
+        <line x1="334" y1="480" x2="264" y2="480" stroke="#9ca4ad" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="299" y="470" text-anchor="middle" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">snapshot</text>
+
+        <!-- consumers -->
+        <line x1="430" y1="596" x2="430" y2="546" stroke="#9ca4ad" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="430" y="618" text-anchor="middle" font-size="12" fill="#6b7280">browser</text>
+        <line x1="590" y1="596" x2="590" y2="546" stroke="#9ca4ad" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="590" y="618" text-anchor="middle" font-size="12" fill="#6b7280">Grafana / Prometheus</text>
+
+        <!-- legend -->
+        <rect x="760" y="470" width="14" height="14" rx="4" fill="rgba(0,87,255,0.04)" stroke="rgba(0,87,255,0.35)"/>
+        <text x="782" y="482" font-size="11" fill="#6b7280">the brokemode binary</text>
+        <rect x="760" y="496" width="14" height="14" rx="4" fill="#ffffff" stroke="rgba(0,42,97,0.18)"/>
+        <text x="782" y="508" font-size="11" fill="#6b7280">external component</text>
+      </svg>
     </div>
     <p class="muted" style="margin-top: 16px; max-width: 680px;">
       <code>brokemode serve</code> runs the gateway in the same process by
@@ -219,7 +275,7 @@
   <div class="inner">
     <span>brokemode — MIT-licensed open source</span>
     <span class="grow"></span>
-    <a href="./">Background</a>
+    <a href="./">Overview</a>
     <a href="getting-started.html">Getting started</a>
     <a href="https://github.com/alileza/brokemode">GitHub</a>
     <a href="https://github.com/alileza/brokemode/issues">Issues</a>
