@@ -58,7 +58,7 @@ disable with --gateway=false if you run 'brokemode gateway' separately.`,
 						log.Printf("gateway: %v", err)
 					}
 				}()
-				defer gwSrv.Close()
+				defer func() { _ = gwSrv.Close() }()
 			}
 
 			mux, err := serveMux(reg, sharedMetrics, collector)

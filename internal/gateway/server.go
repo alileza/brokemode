@@ -185,9 +185,9 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
 	if req.Stream {
-		s.streamMessages(w, r, chatReq, &req, model, &rec, start)
+		s.streamMessages(w, r, chatReq, &req, &rec, start)
 	} else {
-		s.completeMessages(w, r, chatReq, &req, model, &rec, start)
+		s.completeMessages(w, r, chatReq, &req, &rec, start)
 	}
 
 	rec.PeakRSS = watcher.stop()
@@ -198,7 +198,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		req.Model, model.Name, req.Stream, rec.Status, rec.TTFTMs, rec.DecodeTPS, rec.TokensIn, rec.TokensOut)
 }
 
-func (s *Server) completeMessages(w http.ResponseWriter, r *http.Request, chatReq *ollama.ChatRequest, req *MessagesRequest, model *registry.Model, rec *metrics.RequestRecord, start time.Time) {
+func (s *Server) completeMessages(w http.ResponseWriter, r *http.Request, chatReq *ollama.ChatRequest, req *MessagesRequest, rec *metrics.RequestRecord, start time.Time) {
 	resp, err := s.Client.Chat(r.Context(), *chatReq)
 	if err != nil {
 		rec.Status = http.StatusBadGateway

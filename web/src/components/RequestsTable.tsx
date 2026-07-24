@@ -33,8 +33,13 @@ export default function RequestsTable({ requests }: RequestsTableProps) {
         </thead>
         <tbody className="tabular-nums">
           {requests.slice(0, 20).map((r, i) => (
-            <tr key={`${r.time}-${i}`} className="border-b border-slate-800/50 hover:bg-slate-800/30">
-              <td className="py-1.5 pr-4 text-slate-400">{new Date(r.time).toLocaleTimeString()}</td>
+            <tr
+              key={`${r.time}-${i}`}
+              className="border-b border-slate-800/50 hover:bg-slate-800/30"
+            >
+              <td className="py-1.5 pr-4 text-slate-400">
+                {new Date(r.time).toLocaleTimeString()}
+              </td>
               <td className="py-1.5 pr-4">
                 {r.model}
                 {r.alias !== undefined && r.alias !== r.model && (

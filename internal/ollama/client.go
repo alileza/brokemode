@@ -69,9 +69,9 @@ type Timing struct {
 
 // GenerateResponse is the (non-streamed) reply from /api/generate.
 type GenerateResponse struct {
-	Model     string `json:"model"`
-	Response  string `json:"response"`
-	Done      bool   `json:"done"`
+	Model      string `json:"model"`
+	Response   string `json:"response"`
+	Done       bool   `json:"done"`
 	DoneReason string `json:"done_reason"`
 	Timing
 }
@@ -152,7 +152,7 @@ func (c *Client) post(ctx context.Context, path string, body any) (*http.Respons
 		return nil, fmt.Errorf("ollama %s: %w (is ollama running? brew services start ollama)", path, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, fmt.Errorf("ollama %s: HTTP %d: %s", path, resp.StatusCode, bytes.TrimSpace(msg))
 	}
@@ -167,7 +167,7 @@ func (c *Client) Generate(ctx context.Context, req GenerateRequest) (*GenerateRe
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var out GenerateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, fmt.Errorf("decode /api/generate response: %w", err)
@@ -182,7 +182,7 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, erro
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var out ChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, fmt.Errorf("decode /api/chat response: %w", err)
@@ -198,7 +198,7 @@ func (c *Client) ChatStream(ctx context.Context, req ChatRequest, fn func(ChatRe
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for sc.Scan() {
@@ -233,7 +233,7 @@ func (c *Client) Tags(ctx context.Context) (*TagsResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ollama /api/tags: %w (is ollama running?)", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("ollama /api/tags: HTTP %d", resp.StatusCode)
 	}

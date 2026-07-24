@@ -50,13 +50,13 @@ var Suite = []Case{
 // RunMetrics are the derived numbers for one run, all from Ollama's native
 // timing fields (load_duration, prompt_eval_*, eval_*).
 type RunMetrics struct {
-	TTFTMs     float64 `json:"ttft_ms"`      // load + prompt eval
-	PrefillTPS float64 `json:"prefill_tps"`  // prompt_eval_count / prompt_eval_duration
-	DecodeTPS  float64 `json:"decode_tps"`   // eval_count / eval_duration
-	WallMs     float64 `json:"wall_ms"`      // total_duration
-	LoadMs     float64 `json:"load_ms"`      // load_duration
-	TokensIn   int     `json:"tokens_in"`    // prompt_eval_count
-	TokensOut  int     `json:"tokens_out"`   // eval_count
+	TTFTMs     float64 `json:"ttft_ms"`     // load + prompt eval
+	PrefillTPS float64 `json:"prefill_tps"` // prompt_eval_count / prompt_eval_duration
+	DecodeTPS  float64 `json:"decode_tps"`  // eval_count / eval_duration
+	WallMs     float64 `json:"wall_ms"`     // total_duration
+	LoadMs     float64 `json:"load_ms"`     // load_duration
+	TokensIn   int     `json:"tokens_in"`   // prompt_eval_count
+	TokensOut  int     `json:"tokens_out"`  // eval_count
 }
 
 // Stat is a median/p95 pair. Never the mean.
@@ -122,7 +122,7 @@ type Runner struct {
 
 func (r *Runner) logf(format string, args ...any) {
 	if r.Log != nil {
-		fmt.Fprintf(r.Log, format+"\n", args...)
+		_, _ = fmt.Fprintf(r.Log, format+"\n", args...)
 	}
 }
 

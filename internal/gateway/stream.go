@@ -8,7 +8,6 @@ import (
 
 	"github.com/alileza/brokemode/internal/metrics"
 	"github.com/alileza/brokemode/internal/ollama"
-	"github.com/alileza/brokemode/internal/registry"
 )
 
 // sseWriter emits Anthropic-format SSE events and flushes each one; a
@@ -34,7 +33,7 @@ func (s *sseWriter) event(name string, payload any) {
 	if err != nil {
 		return
 	}
-	fmt.Fprintf(s.w, "event: %s\ndata: %s\n\n", name, data)
+	_, _ = fmt.Fprintf(s.w, "event: %s\ndata: %s\n\n", name, data)
 	s.f.Flush()
 }
 
@@ -55,7 +54,6 @@ type streamState struct {
 	blockOpen    bool
 	deltasSinceP int
 	sawToolCall  bool
-	outputTokens int
 }
 
 func (st *streamState) openTextBlock() {
@@ -127,7 +125,7 @@ func (st *streamState) toolUseBlock(tc ollama.ToolCall) {
 	st.blockIndex++
 }
 
-func (s *Server) streamMessages(w http.ResponseWriter, r *http.Request, chatReq *ollama.ChatRequest, req *MessagesRequest, model *registry.Model, rec *metrics.RequestRecord, start time.Time) {
+func (s *Server) streamMessages(w http.ResponseWriter, r *http.Request, chatReq *ollama.ChatRequest, req *MessagesRequest, rec *metrics.RequestRecord, start time.Time) {
 	sse, ok := newSSEWriter(w)
 	if !ok {
 		rec.Status = http.StatusInternalServerError

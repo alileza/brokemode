@@ -43,7 +43,6 @@ type Model struct {
 	stream  metrics.StreamPayload
 	fromAPI bool
 	tpsHist []float64
-	err     error
 	width   int
 }
 
@@ -110,7 +109,7 @@ func fetchSnapshot(base string) (*metrics.StreamPayload, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var p metrics.StreamPayload
 	if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
 		return nil, err

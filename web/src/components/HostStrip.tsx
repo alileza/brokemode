@@ -40,7 +40,8 @@ function Tile({ label, value, sub, tone }: TileProps) {
 
 /** GPU residency / power / memory pressure / thermal state, 1Hz. */
 export default function HostStrip({ telemetry: t }: HostStripProps) {
-  const pressureTone = t.memory_pressure_pct >= 80 ? 'bad' : t.memory_pressure_pct >= 60 ? 'warn' : 'ok';
+  const pressureTone =
+    t.memory_pressure_pct >= 80 ? 'bad' : t.memory_pressure_pct >= 60 ? 'warn' : 'ok';
   const thermalTone = t.thermal_level > 0 ? 'bad' : 'ok';
 
   return (
@@ -48,7 +49,11 @@ export default function HostStrip({ telemetry: t }: HostStripProps) {
       <Tile
         label="GPU active"
         value={`${(t.gpu_active_ratio * 100).toFixed(0)}%`}
-        sub={t.package_power_w > 0 ? `${t.package_power_w.toFixed(1)} W package` : 'powermetrics needs sudo'}
+        sub={
+          t.package_power_w > 0
+            ? `${t.package_power_w.toFixed(1)} W package`
+            : 'powermetrics needs sudo'
+        }
       />
       <Tile
         label="Memory pressure"

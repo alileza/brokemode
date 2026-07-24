@@ -42,7 +42,9 @@ export default function Sparkline({
         const rect = e.currentTarget.getBoundingClientRect();
         setHover(((e.clientX - rect.left) / rect.width) * width);
       }}
-      onMouseLeave={() => setHover(null)}
+      onMouseLeave={() => {
+        setHover(null);
+      }}
     >
       <defs>
         <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
@@ -69,7 +71,14 @@ export default function Sparkline({
             stroke="#475569"
             strokeWidth="1"
           />
-          <circle cx={x(hoverIndex)} cy={y(hoverValue)} r="4" fill={stroke} stroke="#0f172a" strokeWidth="2" />
+          <circle
+            cx={x(hoverIndex)}
+            cy={y(hoverValue)}
+            r="4"
+            fill={stroke}
+            stroke="#0f172a"
+            strokeWidth="2"
+          />
           <text
             x={x(hoverIndex) + (hoverIndex > values.length / 2 ? -8 : 8)}
             y={pad + 12}

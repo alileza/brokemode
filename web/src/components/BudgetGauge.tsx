@@ -22,7 +22,9 @@ export default function BudgetGauge({ usedBytes, budgetGB }: BudgetGaugeProps) {
       <div className="flex items-baseline justify-between">
         <span className="text-3xl font-semibold tabular-nums text-slate-100">
           {usedGB.toFixed(1)}
-          <span className="ml-1 text-sm font-normal text-slate-400">/ {budgetGB.toFixed(0)} GB</span>
+          <span className="ml-1 text-sm font-normal text-slate-400">
+            / {budgetGB.toFixed(0)} GB
+          </span>
         </span>
         <span className="text-xs text-slate-400">
           {(ratio * 100).toFixed(0)}% · {label}

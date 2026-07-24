@@ -24,8 +24,12 @@ export default function App() {
       setConn('live');
       setTpsHistory((h) => [...h, data.decode_tps].slice(-HISTORY));
     });
-    es.onerror = () => setConn('lost');
-    return () => es.close();
+    es.onerror = () => {
+      setConn('lost');
+    };
+    return () => {
+      es.close();
+    };
   }, []);
 
   const connBadge: Record<Conn, { text: string; cls: string }> = {
@@ -79,7 +83,9 @@ export default function App() {
                 {payload.ttft_ms > 0 ? `${payload.ttft_ms.toFixed(0)} ms` : '—'}
                 <span className="ml-1 text-sm font-normal text-slate-400">TTFT</span>
               </div>
-              <p className="mt-1 text-xs text-slate-500">time to first token, most recent gateway request</p>
+              <p className="mt-1 text-xs text-slate-500">
+                time to first token, most recent gateway request
+              </p>
             </section>
           </div>
 
