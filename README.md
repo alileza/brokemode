@@ -23,10 +23,30 @@ Then:
 
 ```sh
 source ~/.brokemode/env
+brokemode doctor                # what can THIS machine run? warnings + picks
 brokemode bench                 # 3 warmup + 5 measured runs per prompt, median/p95
 brokemode serve                 # gateway :9100 + dashboard/metrics :9101
 brokemode tui                   # terminal dashboard, 1Hz
 brokemode models                # registry + budget verdicts
+```
+
+`brokemode doctor` (and the installer) inspect the actual machine — unified
+memory, cores, free disk, live memory pressure, thermal state — and classify
+every registry model as **comfortable / tight / no-fit** against an
+effective budget of `min(max_rss_gb, memory − 5GB reserved for macOS)`. You
+get a recommended model (best quality that fits comfortably), a fast-lane
+pick (highest tok/s), and loud warnings when memory is short, when disk
+needs freeing (with the exact GB figure), or when the machine is already
+under pressure or throttled:
+
+```
+machine: 16GB unified memory, 8 cores, 500.0GB free disk
+effective RSS budget: 11.0GB
+
+MODEL          FIT          WHY
+qwen3.5:9b     comfortable  7.8GB RSS leaves 3.2GB headroom  ← recommended
+gemma4:e4b     comfortable  3.4GB RSS leaves 7.6GB headroom  ← fastest
+gemma4:12b     tight        10.2GB RSS against a 11.0GB budget — close everything else first
 ```
 
 From a checkout: `make build` (Vite build, then `go build` with the

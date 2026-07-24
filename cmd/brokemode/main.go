@@ -42,6 +42,7 @@ func main() {
 	root.AddCommand(newServeCmd())
 	root.AddCommand(newTUICmd())
 	root.AddCommand(newModelsCmd())
+	root.AddCommand(newDoctorCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "brokemode: %v\n", err)

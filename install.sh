@@ -41,9 +41,18 @@ done
 
 MEM_BYTES="$(sysctl -n hw.memsize)"
 MEM_GB=$(( MEM_BYTES / 1024 / 1024 / 1024 ))
-log "detected macOS arm64 with ${MEM_GB}GB unified memory"
+CPU_CORES="$(sysctl -n hw.ncpu 2>/dev/null || echo 0)"
+DISK_FREE_GB="$(df -Pk "$HOME" | awk 'NR==2 {printf "%.1f", $4/1024/1024}')"
+log "detected macOS arm64: ${MEM_GB}GB unified memory, ${CPU_CORES} cores, ${DISK_FREE_GB}GB free disk"
+
+if [ "$MEM_GB" -lt 8 ]; then
+  die "${MEM_GB}GB unified memory cannot run any model in this registry. Nothing was changed."
+fi
 if [ "$MEM_GB" -lt 16 ]; then
-  die "${MEM_GB}GB unified memory is below the 16GB this registry is tuned for. Edit models.yaml budgets before installing."
+  warn "${MEM_GB}GB unified memory is below the 16GB this registry is tuned for — the budget will be tightened and only the smallest models will fit. Close other apps before running anything."
+fi
+if [ "$CPU_CORES" -gt 0 ] && [ "$CPU_CORES" -lt 8 ]; then
+  warn "${CPU_CORES} CPU cores — prefill on long prompts will be slower than the registry's expected rates."
 fi
 
 # ---------------------------------------------------------------- homebrew deps
@@ -98,7 +107,38 @@ parse_models() {
 
 BUDGET_GB="$(parse_models | awk -F'|' '$1=="BUDGET"{print $2}')"
 [ -n "$BUDGET_GB" ] || die "models.yaml is missing max_rss_gb"
-log "RSS budget: ${BUDGET_GB}GB (of ${MEM_GB}GB total)"
+
+# Effective budget: min(max_rss_gb, memory - 5GB reserved for macOS), so a
+# smaller machine automatically tightens the registry's tuned budget.
+EFFECTIVE_BUDGET_GB="$(awk -v b="$BUDGET_GB" -v m="$MEM_GB" 'BEGIN{u=m-5; if(u<0)u=0; print (u<b)?u:b}')"
+log "RSS budget: ${EFFECTIVE_BUDGET_GB}GB effective (max_rss_gb=${BUDGET_GB}, ${MEM_GB}GB memory - 5GB reserved for macOS)"
+
+# fit_of <peak_rss>: comfortable / tight / no-fit against the effective budget.
+fit_of() {
+  awk -v r="$1" -v b="$EFFECTIVE_BUDGET_GB" 'BEGIN{
+    if (r <= b - 1.5)      print "comfortable";
+    else if (r <= b)       print "tight";
+    else                   print "no-fit";
+  }'
+}
+
+# The recommended model: heaviest comfortable fit (peak RSS tracks quality)
+# with enough free disk; fastest pick: highest expected tok/s that fits.
+RECOMMENDED=""
+FASTEST=""
+best_rss=0
+best_tps=0
+while IFS='|' read -r name disk rss tps def; do
+  [ "$name" = "BUDGET" ] && continue
+  [ "$(fit_of "$rss")" = "comfortable" ] || continue
+  disk_ok="$(awk -v f="$DISK_FREE_GB" -v d="$disk" 'BEGIN{print (f >= d+2) ? 1 : 0}')"
+  [ "$disk_ok" -eq 1 ] || continue
+  if awk -v a="$rss" -v b="$best_rss" 'BEGIN{exit !(a>b)}'; then best_rss="$rss"; RECOMMENDED="$name"; fi
+  if awk -v a="$tps" -v b="$best_tps" 'BEGIN{exit !(a>b)}'; then best_tps="$tps"; FASTEST="$name"; fi
+done < <(parse_models)
+if [ -z "$RECOMMENDED" ]; then
+  warn "no registry model fits this machine comfortably (memory or disk) — see the summary table below for what to free up."
+fi
 
 # ---------------------------------------------------------------- binary
 BIN_DIR="$HOME/.brokemode/bin"
@@ -127,6 +167,7 @@ in_only_list() {
 
 PULLED=""
 SKIPPED_BUDGET=""
+SKIPPED_DISK=""
 while IFS='|' read -r name disk rss tps def; do
   [ "$name" = "BUDGET" ] && continue
   if [ -n "$ONLY_MODELS" ]; then
@@ -135,10 +176,18 @@ while IFS='|' read -r name disk rss tps def; do
     [ "$def" = "true" ] || continue
   fi
 
-  over_budget="$(awk -v r="$rss" -v b="$BUDGET_GB" 'BEGIN{print (r>b) ? 1 : 0}')"
+  over_budget="$(awk -v r="$rss" -v b="$EFFECTIVE_BUDGET_GB" 'BEGIN{print (r>b) ? 1 : 0}')"
   if [ "$over_budget" -eq 1 ]; then
-    warn "REFUSING to pull $name: peak RSS ${rss}GB exceeds the ${BUDGET_GB}GB budget"
+    needed_mem="$(awk -v r="$rss" 'BEGIN{printf "%.0f", r+5}')"
+    warn "REFUSING to pull $name: peak RSS ${rss}GB exceeds the ${EFFECTIVE_BUDGET_GB}GB budget — this model needs a ~${needed_mem}GB machine"
     SKIPPED_BUDGET="$SKIPPED_BUDGET $name"
+    continue
+  fi
+
+  disk_short="$(awk -v f="$DISK_FREE_GB" -v d="$disk" 'BEGIN{s=d+2-f; if(s>0) printf "%.1f", s; else print 0}')"
+  if [ "$disk_short" != "0" ]; then
+    warn "NOT ENOUGH DISK for $name: needs ${disk}GB + 2GB headroom, only ${DISK_FREE_GB}GB free — free up at least ${disk_short}GB and re-run"
+    SKIPPED_DISK="$SKIPPED_DISK $name"
     continue
   fi
 
@@ -174,14 +223,24 @@ printf '\n'
 log "add this line to ~/.zshrc:"
 printf '\n    source ~/.brokemode/env\n\n'
 
-printf '%-14s %10s %12s %14s %s\n' "MODEL" "DISK(GB)" "PEAK RSS(GB)" "EXPECTED TOK/S" "STATUS"
-printf '%-14s %10s %12s %14s %s\n' "-----" "--------" "------------" "--------------" "------"
+printf '%-14s %10s %12s %14s %-12s %s\n' "MODEL" "DISK(GB)" "PEAK RSS(GB)" "EXPECTED TOK/S" "FIT" "STATUS"
+printf '%-14s %10s %12s %14s %-12s %s\n' "-----" "--------" "------------" "--------------" "---" "------"
 while IFS='|' read -r name disk rss tps def; do
   [ "$name" = "BUDGET" ] && continue
   status="registry"
   case " $PULLED "         in *" $name "*) status="pulled" ;; esac
   case " $SKIPPED_BUDGET " in *" $name "*) status="OVER BUDGET" ;; esac
-  printf '%-14s %10s %12s %14s %s\n' "$name" "$disk" "$rss" "$tps" "$status"
+  case " $SKIPPED_DISK "   in *" $name "*) status="NEEDS DISK" ;; esac
+  fit="$(fit_of "$rss")"
+  marker=""
+  [ "$name" = "$FASTEST" ] && marker="  <- fastest"
+  [ "$name" = "$RECOMMENDED" ] && marker="  <- recommended"
+  printf '%-14s %10s %12s %14s %-12s %s%s\n' "$name" "$disk" "$rss" "$tps" "$fit" "$status" "$marker"
 done < <(parse_models)
 printf '\n'
-log "done. Try: brokemode bench --model qwen3.5:4b"
+if [ -n "$RECOMMENDED" ]; then
+  log "recommended for this machine: $RECOMMENDED — try: brokemode bench --model $RECOMMENDED"
+  [ -n "$FASTEST" ] && [ "$FASTEST" != "$RECOMMENDED" ] && log "fast lane: $FASTEST"
+else
+  log "done, but nothing fits comfortably — run 'brokemode doctor' after freeing memory or disk."
+fi
