@@ -146,6 +146,53 @@ func launcherHeader(reg *registry.Registry, advice recommend.Advice, pulled map[
 	return b.String()
 }
 
+// isPulled reports whether ollama has the model locally.
+func isPulled(ctx context.Context, client *ollama.Client, name string) (bool, error) {
+	tags, err := client.Tags(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, t := range tags.Models {
+		if t.Name == name || strings.TrimSuffix(t.Name, ":latest") == name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// ensureModelReady makes sure the model is pulled and resident in memory
+// before Claude Code sends its first request: pull if missing, then a
+// bare /api/generate call (empty prompt) which loads the model and
+// returns. Warming only the main model — loading two at once is how a
+// 16GB machine blows its budget.
+func ensureModelReady(reg *registry.Registry, name string) error {
+	client := ollama.New(flagOllamaHost)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	pulled, err := isPulled(ctx, client, name)
+	cancel()
+	if err != nil {
+		return fmt.Errorf("could not check ollama's local models: %w", err)
+	}
+	if !pulled {
+		fmt.Printf("%s isn't pulled yet — pulling it first\n", name)
+		if err := pullModel(reg, name); err != nil {
+			return err
+		}
+	}
+
+	fmt.Printf("loading %s into memory (makes the first response instant)…\n", name)
+	loadCtx, loadCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer loadCancel()
+	if _, err := client.Generate(loadCtx, ollama.GenerateRequest{Model: name}); err != nil {
+		// Not fatal: claude will surface a real failure; a slow first
+		// response is the worst case here.
+		fmt.Printf("warm-up did not complete (%v) — the first response may be slow\n", err)
+	} else {
+		fmt.Printf("%s is loaded and ready\n", name)
+	}
+	return nil
+}
+
 func gatewayBase() string {
 	if g := os.Getenv("BROKEMODE_GATEWAY"); g != "" {
 		return g
@@ -214,6 +261,24 @@ func launchClaudeCode(reg *registry.Registry, advice recommend.Advice) error {
 		}
 	}
 
+	// The main model gets pulled AND warm-loaded; the small/fast model
+	// only needs to exist on disk (loading both at once busts the budget).
+	if err := ensureModelReady(reg, mustName(reg, model)); err != nil {
+		return err
+	}
+	if fastName := mustName(reg, fast); fastName != mustName(reg, model) {
+		client := ollama.New(flagOllamaHost)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		pulled, err := isPulled(ctx, client, fastName)
+		cancel()
+		if err == nil && !pulled {
+			fmt.Printf("%s (small/fast model) isn't pulled yet — pulling it too\n", fastName)
+			if err := pullModel(reg, fastName); err != nil {
+				return err
+			}
+		}
+	}
+
 	env := os.Environ()
 	env = append(env,
 		"ANTHROPIC_BASE_URL="+base,
@@ -258,7 +323,7 @@ func runLauncher(cmd *cobra.Command) error {
 	}
 	items := []menuItem{
 		{fmt.Sprintf("Launch Claude Code (%s → %s)", primaryAliasByName(reg, recName), recName),
-			"starts the gateway if needed and opens claude, env preconfigured", actionLaunchClaude},
+			"pulls + warm-loads the model if needed, starts the gateway, opens claude", actionLaunchClaude},
 		{fmt.Sprintf("Pull recommended model (%s)", recName),
 			"download it via ollama — budget-checked first", actionPull},
 		{"Doctor", "what can this machine actually run, with warnings", actionDoctor},
