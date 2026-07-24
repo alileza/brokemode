@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>brokemode — local LLMs on Apple Silicon, zero token cost</title>
+  <meta name="description" content="Run and benchmark local LLMs on a 16GB MacBook, and point Claude Code at your own silicon.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="./">brokemode</a>
+    <a href="./" class="active">Background</a>
+    <a href="getting-started.html">Getting started</a>
+    <a href="architecture.html">Architecture</a>
+    <a class="gh" href="https://github.com/alileza/brokemode">GitHub →</a>
+  </nav>
+
+  <h1>Local LLMs on Apple Silicon.<br>Zero token cost.</h1>
+  <p class="lead">
+    brokemode runs, benchmarks, and monitors local models on a 16GB MacBook —
+    and speaks the Anthropic Messages API, so Claude Code runs against your
+    own machine instead of a metered endpoint.
+  </p>
+
+  <h2>Background</h2>
+  <p>
+    API tokens cost money; the M-series GPU you already own does not. A
+    MacBook Pro M2 with 16GB of unified memory decodes a 9B-parameter model
+    at around 20 tokens per second — enough for chat, summarization, code
+    review, and agentic tool-calling, at a marginal cost of exactly zero.
+    Hence the name: this is the mode you switch to when you're broke (or
+    just refuse to pay per token to think).
+  </p>
+  <p>
+    The catch is that 16GB is a hard ceiling shared with macOS itself, and
+    the line between "runs great" and "swap-death" is only a couple of
+    gigabytes wide. brokemode exists to hold that line:
+  </p>
+
+  <div class="card">
+    <h3>A budget, enforced everywhere</h3>
+    <p>
+      <code>models.yaml</code> carries measured peak RSS per model and a
+      global <code>max_rss_gb: 11</code> budget. The installer, the CLI, and
+      the gateway all refuse to pull or load anything that exceeds it —
+      loudly, with the exact numbers, never silently.
+    </p>
+  </div>
+  <div class="card">
+    <h3>Honest benchmarks</h3>
+    <p>
+      <code>brokemode bench</code> derives TTFT, prefill, and decode rates
+      from Ollama's native timing fields over 3 warmup + 5 measured runs and
+      reports <em>median and p95, never the mean</em> — while sampling GPU
+      residency, memory pressure, RSS, and thermal state at 1Hz so you know
+      <em>why</em> a number moved.
+    </p>
+  </div>
+  <div class="card">
+    <h3>Claude Code as the client</h3>
+    <p>
+      <code>brokemode gateway</code> implements the Anthropic Messages API
+      surface Claude Code requires — the exact SSE event sequence, tool-use
+      round trips, model discovery — translated onto Ollama, with every
+      request instrumented (TTFT, tok/s, tokens, peak RSS).
+    </p>
+  </div>
+
+  <h2>What it is</h2>
+  <ul>
+    <li>One static Go binary (<code>CGO_ENABLED=0</code>) with the web
+        dashboard, model registry, and benchmark prompts embedded — a
+        release download is fully self-contained.</li>
+    <li>An opinionated model registry for a 16GB box: what to run, at what
+        context length, and what it will actually cost in resident memory.</li>
+    <li>A benchmark harness, a terminal dashboard, a web dashboard with a
+        1Hz live telemetry stream, Prometheus metrics, and an importable
+        Grafana dashboard.</li>
+    <li>No Docker, no cloud dependencies, no Python. Shell only for the
+        installer.</li>
+  </ul>
+
+  <h2>What it is not</h2>
+  <p>
+    A 9B model at Q4 is not Sonnet, and nothing here pretends otherwise.
+    The premise is different: for a large slice of daily work, a free,
+    private, always-available local model is good enough — and when it
+    isn't, you've lost nothing by trying it first.
+  </p>
+
+  <p><a href="getting-started.html">Get started →</a></p>
+
+  <footer>MIT licensed · <a href="https://github.com/alileza/brokemode">github.com/alileza/brokemode</a></footer>
+</div>
+</body>
+</html>

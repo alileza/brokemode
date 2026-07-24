@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Getting started — brokemode</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="./">brokemode</a>
+    <a href="./">Background</a>
+    <a href="getting-started.html" class="active">Getting started</a>
+    <a href="architecture.html">Architecture</a>
+    <a class="gh" href="https://github.com/alileza/brokemode">GitHub →</a>
+  </nav>
+
+  <h1>Getting started</h1>
+  <p class="lead">One line on the Mac itself. Everything else follows from there.</p>
+
+  <h2>Requirements</h2>
+  <ul>
+    <li>Apple Silicon Mac (arm64) — the installer refuses anything else</li>
+    <li>16GB unified memory recommended; 8–16GB works with a tightened
+        budget and loud warnings</li>
+    <li><a href="https://brew.sh">Homebrew</a></li>
+    <li>~10GB free disk for the default models (checked before pulling,
+        with the exact shortfall reported)</li>
+  </ul>
+
+  <h2>Install</h2>
+<pre><code>curl -fsSL https://raw.githubusercontent.com/alileza/brokemode/main/install.sh | bash</code></pre>
+  <p>To pass flags through the pipe, use <code>bash -s --</code>:</p>
+<pre><code># preview without changing anything
+curl -fsSL https://raw.githubusercontent.com/alileza/brokemode/main/install.sh | bash -s -- --dry-run
+
+# pull only specific models
+curl -fsSL https://raw.githubusercontent.com/alileza/brokemode/main/install.sh | bash -s -- --models qwen3.5:4b,gemma4:e4b</code></pre>
+  <p>
+    Or from a clone (builds with Go instead of downloading a release —
+    use this if no release is published yet):
+  </p>
+<pre><code>git clone https://github.com/alileza/brokemode.git && cd brokemode && ./install.sh</code></pre>
+
+  <p>The installer is idempotent — re-running is always safe. It:</p>
+  <ol>
+    <li>verifies arm64 macOS and checks memory, cores, and free disk,
+        warning with exact GB figures if anything is short;</li>
+    <li>brew-installs <code>ollama</code> + <code>jq</code> if missing and
+        starts Ollama via <code>brew services</code>;</li>
+    <li>downloads <strong>one self-contained binary</strong> matched to your
+        machine (registry, dashboard, and prompts embedded) and smoke-tests
+        it;</li>
+    <li>pulls every default model that fits your machine's budget — and
+        prints a fit table with a recommended pick.</li>
+  </ol>
+
+  <h2>First steps</h2>
+<pre><code># enable the environment (once)
+grep -q 'brokemode/env' ~/.zshrc || echo 'source ~/.brokemode/env' >> ~/.zshrc
+source ~/.brokemode/env
+
+# what can THIS machine run?
+brokemode doctor
+
+# benchmark the recommended model (median/p95, results/summary.md)
+brokemode bench --model qwen3.5:9b
+
+# gateway :9100 + web dashboard http://127.0.0.1:9101
+brokemode serve
+
+# terminal dashboard
+brokemode tui</code></pre>
+
+  <p>
+    For full GPU and power telemetry during benchmarks, run
+    <code>sudo -v</code> first — <code>powermetrics</code> needs root.
+    Without it the run still completes but is loudly marked
+    <span class="pill warn">PARTIAL</span>.
+  </p>
+
+  <h2>Point Claude Code at it</h2>
+<pre><code>brokemode serve          # keep running
+
+# in another terminal (already set if you sourced ~/.brokemode/env)
+export ANTHROPIC_BASE_URL=http://127.0.0.1:9100
+export ANTHROPIC_AUTH_TOKEN=brokemode-local   # any non-empty token
+claude</code></pre>
+  <p>
+    Model names alias through the registry: requests for
+    <code>claude-sonnet-5</code> (dated variants included) run on
+    <code>qwen3.5:9b</code>, <code>claude-haiku-4-5</code> on
+    <code>qwen3.5:4b</code> — each with its registry context length applied.
+    Verify a running gateway any time with
+    <code>./scripts/verify-gateway.sh</code>.
+  </p>
+
+  <h2>If something's off</h2>
+  <table>
+    <tr><th>Symptom</th><th>Fix</th></tr>
+    <tr><td>"no release binary published yet"</td>
+        <td>Clone and <code>./install.sh</code> — it builds with Go.</td></tr>
+    <tr><td>"is ollama running?"</td>
+        <td><code>brew services start ollama</code>, confirm with <code>ollama list</code>.</td></tr>
+    <tr><td>"NOT ENOUGH DISK" / "REFUSING to pull"</td>
+        <td>The message names the exact GB to free. <code>ollama rm &lt;model&gt;</code> reclaims blob space; re-check with <code>brokemode doctor</code>.</td></tr>
+    <tr><td>Slow, fans on</td>
+        <td>Check <code>brokemode tui</code> — thermal THROTTLED or red memory pressure means close apps or let it cool.</td></tr>
+    <tr><td>Uninstall</td>
+        <td><code>rm -rf ~/.brokemode</code>, drop the zshrc line, optionally <code>brew services stop ollama</code>.</td></tr>
+  </table>
+
+  <p><a href="architecture.html">How it all fits together →</a></p>
+
+  <footer>MIT licensed · <a href="https://github.com/alileza/brokemode">github.com/alileza/brokemode</a></footer>
+</div>
+</body>
+</html>
