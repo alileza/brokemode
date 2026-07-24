@@ -39,12 +39,16 @@ What the installer does, in order — re-running it is always safe:
    cores, and free disk, and warns (with exact GB figures) if any are short.
 2. Brew-installs `ollama` and `jq` if missing; starts Ollama via
    `brew services`.
-3. Installs the `brokemode` binary to `~/.brokemode/bin` (release download,
-   or `go build` from a checkout) and the registry to
-   `~/.brokemode/models.yaml`, then smoke-tests the binary.
-4. Pulls every model marked `default: true` in [models.yaml](models.yaml)
-   that fits this machine's memory budget and disk — anything that doesn't
-   fit is skipped with a loud reason, never silently.
+3. Downloads **one release binary matched to your machine**
+   (`brokemode-darwin-arm64`) — it's fully self-contained: the model
+   registry, the web dashboard, and the bench prompt suite are all
+   compiled in via `embed.FS`. From a checkout it `go build`s instead.
+   Either way the binary is smoke-tested before anything else happens.
+4. Seeds `~/.brokemode/models.yaml` from the binary's embedded registry
+   (edit it there; the binary prefers the on-disk copy) and pulls every
+   model marked `default: true` that fits this machine's memory budget and
+   disk — anything that doesn't fit is skipped with a loud reason, never
+   silently.
 5. Writes `~/.brokemode/env` and prints a summary table (fit verdicts,
    recommended + fastest picks) followed by numbered next steps:
 
@@ -185,16 +189,21 @@ headroom, and watch the compressed-pages line in the TUI.
 ## Troubleshooting
 
 - **"no release binary published yet"** — the repo has no GitHub release
-  for `brokemode-darwin-arm64` yet. Clone and run `./install.sh` instead;
-  it builds with Go (`brew install go` if needed).
+  carrying a `brokemode-<os>-<arch>` asset for your machine yet. Clone and
+  run `./install.sh` instead; it builds with Go (`brew install go` if
+  needed). Maintainers: push a `v*` tag and the release workflow publishes
+  all four platform binaries.
 - **"is ollama running?"** on any command — `brew services start ollama`,
   then `ollama list` to confirm the daemon answers.
 - **GPU/power columns empty, run marked PARTIAL** — `powermetrics` needs
   root. Run `sudo -v` right before `brokemode bench`, or add a NOPASSWD
   sudoers rule for `/usr/bin/powermetrics`. Everything else still works.
-- **"models.yaml not found"** — the binary looks in the current directory,
-  next to the binary, then `~/.brokemode/models.yaml` (the installer puts
-  it there). Pass `--models-yaml path/to/models.yaml` to override.
+- **Registry confusion** — the binary looks for models.yaml in the current
+  directory, next to the binary, then `~/.brokemode/models.yaml`, and
+  finally falls back to the copy embedded at build time (so a bare binary
+  always runs). `brokemode models` prints which source it resolved;
+  `brokemode models --export` dumps the raw YAML; `--models-yaml path`
+  overrides everything.
 - **"NOT ENOUGH DISK" / "REFUSING to pull"** — the message includes the
   exact GB to free or the machine size the model needs. `brokemode doctor`
   re-checks after you clean up. Ollama blobs live in `~/.ollama/models`;
@@ -216,9 +225,17 @@ make lint      # golangci-lint + eslint + prettier
 make verify    # curl smoke test against a running gateway
 ```
 
-Working on a fork? The installer honors `BROKEMODE_REPO`,
-`BROKEMODE_RAW_BASE`, and `BROKEMODE_RELEASE_URL` overrides, which is also
-how its download paths are integration-tested against a local server.
+**Releasing:** push a tag (`git tag v0.1.0 && git push origin v0.1.0`) and
+`.github/workflows/release.yml` builds the dashboard, runs the tests, and
+publishes `brokemode-{darwin,linux}-{arm64,amd64}` binaries plus
+`checksums.txt` to the GitHub release — each one self-contained, which is
+what lets install.sh download exactly one file. CI
+(`.github/workflows/ci.yml`) runs lint, tests, and a darwin/arm64
+cross-compile on every push and PR.
+
+Working on a fork? The installer honors `BROKEMODE_REPO` and
+`BROKEMODE_RELEASE_BASE` overrides, which is also how its download path is
+integration-tested against a local server.
 
 No Docker, no cloud dependencies, no Python. Shell is allowed only in
 `install.sh`. MIT licensed.

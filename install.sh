@@ -9,10 +9,9 @@
 set -euo pipefail
 
 # Overridable for forks and testing:
-#   BROKEMODE_REPO=you/brokemode BROKEMODE_RAW_BASE=... BROKEMODE_RELEASE_URL=...
+#   BROKEMODE_REPO=you/brokemode BROKEMODE_RELEASE_BASE=https://.../download
 REPO="${BROKEMODE_REPO:-alileza/brokemode}"
-RAW_BASE="${BROKEMODE_RAW_BASE:-https://raw.githubusercontent.com/${REPO}/main}"
-RELEASE_URL="${BROKEMODE_RELEASE_URL:-https://github.com/${REPO}/releases/latest/download/brokemode-darwin-arm64}"
+RELEASE_BASE="${BROKEMODE_RELEASE_BASE:-https://github.com/${REPO}/releases/latest/download}"
 BREW_PREFIX=""
 DRY_RUN=0
 ONLY_MODELS=""
@@ -78,19 +77,71 @@ else
   run brew services start ollama
 fi
 
-# ---------------------------------------------------------------- models.yaml
+# ---------------------------------------------------------------- binary
+# One download, matched to this machine: the binary embeds the model
+# registry, the web dashboard, and the bench prompt suite.
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
+BIN_DIR="$HOME/.brokemode/bin"
+run mkdir -p "$BIN_DIR"
+
 if [ -f "$(dirname "$0")/models.yaml" ] 2>/dev/null && [ -f "$(dirname "$0")/go.mod" ]; then
   REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
-  MODELS_YAML="$REPO_DIR/models.yaml"
-  log "using models.yaml from local checkout: $MODELS_YAML"
 else
   REPO_DIR=""
+fi
+
+if [ -n "$REPO_DIR" ] && command -v go >/dev/null 2>&1; then
+  log "building brokemode from local checkout (go build)"
+  run env CGO_ENABLED=0 go build -C "$REPO_DIR" -trimpath -o "$BIN_DIR/brokemode" ./cmd/brokemode
+else
+  OS_NAME="$(uname -s | tr '[:upper:]' '[:lower:]')"
+  ARCH_NAME="$(uname -m)"
+  [ "$ARCH_NAME" = "x86_64" ] && ARCH_NAME="amd64"
+  ASSET="brokemode-${OS_NAME}-${ARCH_NAME}"
+  log "downloading release binary: ${RELEASE_BASE}/${ASSET}"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '\033[2m[dry-run]\033[0m curl -fsSL %s/%s -o %s/brokemode\n' "$RELEASE_BASE" "$ASSET" "$BIN_DIR"
+  else
+    curl -fsSL "${RELEASE_BASE}/${ASSET}" -o "$BIN_DIR/brokemode" \
+      || die "no release binary published yet for ${REPO} (${ASSET}). Build it yourself instead:
+    git clone https://github.com/${REPO}.git && cd brokemode && ./install.sh"
+    chmod +x "$BIN_DIR/brokemode"
+  fi
+fi
+
+# Smoke-test the installed binary before trusting it for anything.
+if [ "$DRY_RUN" -eq 0 ]; then
+  if "$BIN_DIR/brokemode" --help >/dev/null 2>&1; then
+    log "brokemode binary responds: $("$BIN_DIR/brokemode" --version 2>/dev/null || echo ok)"
+  else
+    die "installed binary failed its smoke test — try rebuilding from a clone: git clone https://github.com/${REPO}.git && cd brokemode && ./install.sh"
+  fi
+fi
+
+# ---------------------------------------------------------------- models.yaml
+# Registry source: local checkout file, otherwise the copy embedded in the
+# binary we just installed — no second download.
+if [ -n "$REPO_DIR" ]; then
+  MODELS_YAML="$REPO_DIR/models.yaml"
+  log "using models.yaml from local checkout: $MODELS_YAML"
+elif [ "$DRY_RUN" -eq 0 ]; then
   MODELS_YAML="$WORKDIR/models.yaml"
-  log "fetching models.yaml from ${RAW_BASE}"
-  curl -fsSL "${RAW_BASE}/models.yaml" -o "$MODELS_YAML" || die "could not fetch models.yaml"
+  "$BIN_DIR/brokemode" models --export > "$MODELS_YAML" || die "could not export the embedded registry from the binary"
+  log "using models.yaml embedded in the binary"
+else
+  # Dry-run without a checkout or binary: fall back to an existing install.
+  MODELS_YAML="$HOME/.brokemode/models.yaml"
+  [ -f "$MODELS_YAML" ] || die "--dry-run without a checkout needs an existing ~/.brokemode/models.yaml to preview against"
+  log "using models.yaml from existing install: $MODELS_YAML"
+fi
+
+# Persist so the binary (and the user) can find/edit it from any directory.
+if [ "$DRY_RUN" -eq 0 ]; then
+  mkdir -p "$HOME/.brokemode"
+  [ "$MODELS_YAML" = "$HOME/.brokemode/models.yaml" ] || cp "$MODELS_YAML" "$HOME/.brokemode/models.yaml"
+  log "installed registry to ~/.brokemode/models.yaml"
 fi
 
 # Parse our (fixed-shape) models.yaml with awk into pipe-separated rows:
@@ -141,44 +192,6 @@ while IFS='|' read -r name disk rss tps def; do
 done < <(parse_models)
 if [ -z "$RECOMMENDED" ]; then
   warn "no registry model fits this machine comfortably (memory or disk) — see the summary table below for what to free up."
-fi
-
-# ---------------------------------------------------------------- binary
-BIN_DIR="$HOME/.brokemode/bin"
-run mkdir -p "$BIN_DIR"
-
-if [ -n "$REPO_DIR" ] && command -v go >/dev/null 2>&1; then
-  log "building brokemode from local checkout (go build)"
-  run env CGO_ENABLED=0 go build -C "$REPO_DIR" -trimpath -o "$BIN_DIR/brokemode" ./cmd/brokemode
-else
-  log "downloading release binary: $RELEASE_URL"
-  if [ "$DRY_RUN" -eq 1 ]; then
-    printf '\033[2m[dry-run]\033[0m curl -fsSL %s -o %s/brokemode\n' "$RELEASE_URL" "$BIN_DIR"
-  else
-    curl -fsSL "$RELEASE_URL" -o "$BIN_DIR/brokemode" \
-      || die "no release binary published yet for ${REPO}. Build it yourself instead:
-    git clone https://github.com/${REPO}.git && cd brokemode && ./install.sh"
-    chmod +x "$BIN_DIR/brokemode"
-  fi
-fi
-
-# The binary resolves models.yaml from CWD, its own directory, or
-# ~/.brokemode — persist the registry so a pipe install works from any
-# directory, not just the (deleted) temp dir we fetched it into.
-if [ "$DRY_RUN" -eq 0 ]; then
-  mkdir -p "$HOME/.brokemode"
-  cp "$MODELS_YAML" "$HOME/.brokemode/models.yaml"
-  log "installed registry to ~/.brokemode/models.yaml"
-fi
-
-# Smoke-test the installed binary (skip in dry-run and when it was
-# cross-compiled for a different OS during testing).
-if [ "$DRY_RUN" -eq 0 ] && [ -x "$BIN_DIR/brokemode" ]; then
-  if "$BIN_DIR/brokemode" --help >/dev/null 2>&1; then
-    log "brokemode binary responds: $("$BIN_DIR/brokemode" --help 2>/dev/null | head -1)"
-  else
-    warn "installed binary failed its smoke test — try rebuilding from a clone: git clone https://github.com/${REPO}.git && cd brokemode && ./install.sh"
-  fi
 fi
 
 # ---------------------------------------------------------------- pull models
