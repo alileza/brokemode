@@ -55,6 +55,83 @@ confirm() {
   case "$ans" in n|N|no|NO) return 1 ;; *) return 0 ;; esac
 }
 
+WORKDIR="$(mktemp -d)"
+trap 'rm -rf "$WORKDIR"' EXIT
+
+# ---------------------------------------------------------------- ollama helpers
+OLLAMA_API="${OLLAMA_HOST:-http://127.0.0.1:11434}"
+
+vercmp() { # vercmp a b -> echoes -1/0/1 comparing dotted versions
+  awk -v a="${1#v}" -v b="${2#v}" 'BEGIN{
+    sub(/[-+].*/,"",a); sub(/[-+].*/,"",b);
+    n=split(a,x,"."); m=split(b,y,".");
+    for(i=1;i<=3;i++){ xa=(i<=n)?x[i]+0:0; yb=(i<=m)?y[i]+0:0;
+      if(xa<yb){print -1; exit} if(xa>yb){print 1; exit} }
+    print 0 }'
+}
+
+# Both probes must never fail the script (set -e): an absent daemon or CLI
+# simply yields an empty string.
+client_version() { ollama --version 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)+' | head -1 || true; }
+server_version() { curl -fsS --max-time 3 "$OLLAMA_API/api/version" 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true; }
+
+wait_for_server() { # wait_for_server [expected_version]
+  for _ in $(seq 1 20); do
+    sv="$(server_version)"
+    if [ -n "$sv" ] && { [ -z "${1:-}" ] || [ "$sv" = "$1" ]; }; then
+      echo "$sv"; return 0
+    fi
+    sleep 1
+  done
+  echo "${sv:-}"; return 1
+}
+
+# ensure_ollama_running: get a daemon answering on $OLLAMA_API without
+# insisting on brew-managing it. Handles the launchd "Bootstrap failed: 5"
+# case (stale registration after an upgrade) with a bootout + restart.
+ensure_ollama_running() {
+  local sv
+  sv="$(server_version)"
+  if [ -n "$sv" ]; then
+    log "ollama daemon already answering on $OLLAMA_API (v$sv)"
+    return 0
+  fi
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '\033[2m[dry-run]\033[0m brew services start ollama\n'
+    return 0
+  fi
+
+  log "starting ollama via brew services"
+  if ! brew services start ollama 2>&1 | tee "$WORKDIR/brew-start.log"; then :; fi
+  if grep -qiE 'Bootstrap failed|Failure while executing' "$WORKDIR/brew-start.log"; then
+    warn "launchd refused the start (stale registration is the usual cause) — clearing it and retrying"
+    /bin/launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/homebrew.mxcl.ollama.plist" 2>/dev/null || true
+    if ! brew services restart ollama 2>&1 | tee -a "$WORKDIR/brew-start.log"; then :; fi
+  fi
+
+  if sv="$(wait_for_server)" && [ -n "$sv" ]; then
+    log "ollama daemon is up (v$sv)"
+    return 0
+  fi
+
+  # Registered as started but never answered: a wedged service. One full
+  # bootout + restart cycle before giving up.
+  warn "service registered but the daemon isn't answering — restarting it once"
+  /bin/launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/homebrew.mxcl.ollama.plist" 2>/dev/null || true
+  if ! brew services restart ollama 2>&1 | tee -a "$WORKDIR/brew-start.log"; then :; fi
+  if sv="$(wait_for_server)" && [ -n "$sv" ]; then
+    log "ollama daemon is up (v$sv)"
+    return 0
+  fi
+  die "the ollama daemon never answered on $OLLAMA_API. Ways out:
+    1. clear the launchd registration and retry:
+         launchctl bootout gui/\$(id -u) ~/Library/LaunchAgents/homebrew.mxcl.ollama.plist
+         brew services start ollama
+    2. if you use the Ollama.app, open it (its daemon works fine too)
+    3. or run it by hand in another terminal: ollama serve
+  then re-run this installer."
+}
+
 # ---------------------------------------------------------------- platform
 [ "$(uname -s)" = "Darwin" ] || die "brokemode targets macOS on Apple Silicon; detected $(uname -s). Nothing was changed."
 [ "$(uname -m)" = "arm64" ]  || die "brokemode requires an Apple Silicon (arm64) Mac; detected $(uname -m). Rosetta shells also trigger this — re-run from a native arm64 terminal."
@@ -88,19 +165,11 @@ for pkg in ollama jq; do
   fi
 done
 
-if brew services list 2>/dev/null | grep -E '^ollama\s+started' >/dev/null; then
-  log "ollama service already running"
-else
-  log "starting ollama via brew services"
-  run brew services start ollama
-fi
+ensure_ollama_running
 
 # ---------------------------------------------------------------- binary
 # One download, matched to this machine: the binary embeds the model
 # registry, the web dashboard, and the bench prompt suite.
-WORKDIR="$(mktemp -d)"
-trap 'rm -rf "$WORKDIR"' EXIT
-
 BIN_DIR="$HOME/.brokemode/bin"
 run mkdir -p "$BIN_DIR"
 
@@ -167,31 +236,6 @@ fi
 # is older, offer a brew upgrade; afterwards make sure the running daemon
 # actually matches the client (brew upgrades the binary but the old daemon
 # keeps running until restarted).
-OLLAMA_API="${OLLAMA_HOST:-http://127.0.0.1:11434}"
-
-vercmp() { # vercmp a b -> echoes -1/0/1 comparing dotted versions
-  awk -v a="${1#v}" -v b="${2#v}" 'BEGIN{
-    sub(/[-+].*/,"",a); sub(/[-+].*/,"",b);
-    n=split(a,x,"."); m=split(b,y,".");
-    for(i=1;i<=3;i++){ xa=(i<=n)?x[i]+0:0; yb=(i<=m)?y[i]+0:0;
-      if(xa<yb){print -1; exit} if(xa>yb){print 1; exit} }
-    print 0 }'
-}
-
-client_version() { ollama --version 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)+' | head -1; }
-server_version() { curl -fsS --max-time 3 "$OLLAMA_API/api/version" 2>/dev/null | jq -r '.version // empty' 2>/dev/null; }
-
-wait_for_server() { # wait_for_server [expected_version]
-  for _ in $(seq 1 20); do
-    sv="$(server_version)"
-    if [ -n "$sv" ] && { [ -z "${1:-}" ] || [ "$sv" = "$1" ]; }; then
-      echo "$sv"; return 0
-    fi
-    sleep 1
-  done
-  echo "${sv:-}"; return 1
-}
-
 ensure_ollama_version() {
   local min="$1"
   [ -n "$min" ] || return 0
