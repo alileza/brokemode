@@ -61,7 +61,7 @@ export default function App() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold tracking-tight">Local LLM dashboard</h1>
           <p className="mt-1 text-[15px] text-[var(--content-secondary)]">
-            Live decode rate, memory budget, and host telemetry — zero token cost.
+            Live decode rate, memory budget, and host telemetry — billed to your M2.
           </p>
         </div>
 

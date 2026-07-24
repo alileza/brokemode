@@ -1,11 +1,18 @@
 # brokemode
 
-Run and benchmark local LLMs on Apple Silicon — the premise being **zero
-token cost**. Tuned for a MacBook Pro M2 with 16GB unified memory.
+> when you're broke and can't pay for more tokens, we gotta need a workaround
 
-One static Go binary (`CGO_ENABLED=0`, dashboard embedded via `embed.FS`),
-an Ollama backend, and a gateway that speaks the Anthropic Messages API so
-Claude Code runs against your own silicon.
+It's the 23rd of the month. The API bill has opinions. Your MacBook,
+meanwhile, has a perfectly good GPU in it that's been rendering Slack.
+brokemode is the workaround: run models on the machine you already own,
+where the only invoice is your electricity bill and you were paying that
+anyway.
+
+Concretely: one static Go binary (`CGO_ENABLED=0`, dashboard embedded via
+`embed.FS`), an Ollama backend, and a gateway that speaks the Anthropic
+Messages API — so Claude Code keeps working, it just bills your M2 instead
+of your card. Tuned for a MacBook Pro M2 with 16GB unified memory, i.e.
+the one you have, not the one you'd buy if you weren't broke.
 
 ## Quickstart
 
@@ -99,10 +106,13 @@ dashboard embedded — node is a build-time dependency only).
 
 ## The memory budget
 
-`models.yaml` carries a global `max_rss_gb: 11` budget. Both `install.sh`
-and every CLI/gateway load path refuse to pull or serve a model whose
-measured peak RSS exceeds it. 11GB leaves ~5GB for macOS itself; past that
-the compressor starts trading your decode rate for survival.
+Being broke is a discipline, and the discipline here is memory. 16GB
+sounds like a lot until macOS takes its cut. `models.yaml` carries a
+global `max_rss_gb: 11` budget, and both `install.sh` and every
+CLI/gateway load path refuse to pull or serve a model whose measured peak
+RSS exceeds it. 11GB leaves ~5GB for macOS itself; past that the
+compressor starts trading your decode rate for survival, and now you're
+broke *and* slow.
 
 | model | quant | disk | peak RSS | num_ctx | expected tok/s | use when |
 |---|---|---|---|---|---|---|
@@ -134,13 +144,15 @@ this table:
 |---|---|---|---|
 | _run `brokemode bench`_ | | | |
 
-## Claude Code on your own silicon
+## Claude Code, but it bills your Mac
 
-`brokemode gateway` implements the Anthropic Messages API surface Claude
-Code needs — streaming SSE with the exact event sequence, tool_use/
-tool_result translation, stop_reason mapping, usage accounting — backed by
-Ollama, with per-request TTFT/decode/RSS instrumentation (that's why it's
-ours and not an off-the-shelf proxy).
+This is the whole point of the operation. `brokemode gateway` implements
+the Anthropic Messages API surface Claude Code needs — streaming SSE with
+the exact event sequence, tool_use/tool_result translation, stop_reason
+mapping, usage accounting — backed by Ollama, with per-request
+TTFT/decode/RSS instrumentation (that's why it's ours and not an
+off-the-shelf proxy). Claude Code cannot tell it's been handed a budget
+airline seat; it boards normally.
 
 ```sh
 brokemode serve        # gateway on :9100, dashboard on :9101
@@ -155,8 +167,9 @@ each with its registry `num_ctx` applied. `GET /v1/models` serves the
 registry for Claude Code's model discovery. Verify a running gateway with
 `./scripts/verify-gateway.sh`.
 
-Temper expectations: a 9B Q4 model is not Sonnet. It is, however, free,
-private, and yours.
+Temper expectations: a 9B Q4 model is not Sonnet, and nobody here will
+pretend it is. It is, however, free, private, always awake, and incapable
+of emailing you about usage tiers.
 
 ## Monitoring
 
@@ -172,9 +185,10 @@ private, and yours.
 
 ## What does NOT fit on 16GB, and why
 
-Unified memory is shared: the OS, WindowServer, and your browser hold
-~4–5GB before Ollama loads anything. The practical model budget is ~11GB —
-hence `max_rss_gb`.
+Champagne models on a beer machine — knowing what you can't afford is half
+of being broke competently. Unified memory is shared: the OS,
+WindowServer, and your browser hold ~4–5GB before Ollama loads anything.
+The practical model budget is ~11GB — hence `max_rss_gb`.
 
 - **14B+ at Q4** (qwen3.5:14b ≈ 11–12GB peak RSS): loads, then the first
   4k-token prefill pushes wired memory past the compressor's tipping
@@ -198,8 +212,7 @@ headroom, and watch the compressed-pages line in the TUI.
 - **"no release binary published yet"** — the repo has no GitHub release
   carrying a `brokemode-<os>-<arch>` asset for your machine yet. Clone and
   run `./install.sh` instead; it builds with Go (`brew install go` if
-  needed). Maintainers: push a `v*` tag and the release workflow publishes
-  all four platform binaries.
+  needed).
 - **"is ollama running?"** on any command — `brew services start ollama`,
   then `ollama list` to confirm the daemon answers.
 - **"ollama server vX is older than the required vY"** — the registry needs
