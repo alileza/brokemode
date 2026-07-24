@@ -74,21 +74,26 @@ func (s *Server) writeError(w http.ResponseWriter, status int, typ, msg string) 
 }
 
 // resolveModel maps the requested model through models.yaml. Besides exact
-// name/alias matches it accepts dated variants (claude-sonnet-5-20250929
-// matches alias claude-sonnet-5) so stock Claude Code model ids work.
+// name/alias matches it accepts dated variants (claude-sonnet-5-20250929)
+// and bracketed variant markers (claude-opus-5[1m] is Claude Code's
+// 1M-context flavor) so stock Claude Code model ids work.
 func (s *Server) resolveModel(requested string) (*registry.Model, error) {
-	if m, err := s.Registry.Resolve(requested); err == nil {
+	normalized := requested
+	if i := strings.IndexByte(normalized, '['); i >= 0 {
+		normalized = strings.TrimSpace(normalized[:i])
+	}
+	if m, err := s.Registry.Resolve(normalized); err == nil {
 		return m, nil
 	}
 	for i := range s.Registry.Models {
 		m := &s.Registry.Models[i]
 		for _, alias := range append([]string{m.Name}, m.Aliases...) {
-			if strings.HasPrefix(requested, alias+"-") {
+			if strings.HasPrefix(normalized, alias+"-") {
 				return m, nil
 			}
 		}
 	}
-	return s.Registry.Resolve(requested) // return the original error
+	return s.Registry.Resolve(normalized) // return the not-found error
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {

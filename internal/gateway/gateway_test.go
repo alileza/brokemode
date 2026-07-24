@@ -520,11 +520,14 @@ func TestModelDiscoveryAndBudget(t *testing.T) {
 		}
 	}
 
-	// Dated Claude Code model ids resolve through alias prefixes.
-	r2 := post(t, srv, `{"model":"claude-sonnet-5-20250929","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`, nil)
-	defer r2.Body.Close()
-	if r2.StatusCode != 200 {
-		t.Errorf("dated model id: status %d", r2.StatusCode)
+	// Stock Claude Code model-id variants resolve: dated suffixes, the
+	// bracketed 1M-context marker, and both combined.
+	for _, id := range []string{"claude-sonnet-5-20250929", "claude-sonnet-5[1m]", "claude-sonnet-5-20250929[1m]", "opus[1m]"} {
+		r2 := post(t, srv, `{"model":"`+id+`","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`, nil)
+		if r2.StatusCode != 200 {
+			t.Errorf("model id %q: status %d, want 200", id, r2.StatusCode)
+		}
+		r2.Body.Close()
 	}
 
 	// Over-budget model is refused before any Ollama call.

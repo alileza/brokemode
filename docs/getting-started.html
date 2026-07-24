@@ -144,6 +144,10 @@
           <td class="req-note">The model registry refused the pull. The installer catches this, offers the upgrade, and retries; if brew's bottle still lags, install the latest from <a href="https://ollama.com/download">ollama.com/download</a> and re-run.</td>
         </tr>
         <tr>
+          <td class="req-name">Claude Code: "issue with the selected model"</td>
+          <td class="req-note">It's asking for a model id the gateway doesn't alias. Run <code>/model</code> inside Claude Code and pick <code>claude-sonnet-5</code> — or rely on the env file, which presets <code>ANTHROPIC_MODEL</code> to it.</td>
+        </tr>
+        <tr>
           <td class="req-name">"NOT ENOUGH DISK" / "REFUSING to pull"</td>
           <td class="req-note">The message names the exact GB to free. <code>ollama rm &lt;model&gt;</code> reclaims blob space; re-check with <code>brokemode doctor</code>.</td>
         </tr>

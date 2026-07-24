@@ -163,11 +163,15 @@ export ANTHROPIC_AUTH_TOKEN="brokemode-local"   # any non-empty token
 claude                 # Claude Code now talks to qwen3.5 on your Mac
 ```
 
-Model aliases come from `models.yaml`: requests for `claude-sonnet-5` (or
-dated variants) hit `qwen3.5:9b`, `claude-haiku-4-5` hits `qwen3.5:4b`,
-each with its registry `num_ctx` applied. `GET /v1/models` serves the
-registry for Claude Code's model discovery. Verify a running gateway with
-`./scripts/verify-gateway.sh`.
+Model aliases come from `models.yaml`: requests for `claude-sonnet-5` —
+including dated variants and Claude Code's bracketed flavors like
+`claude-opus-5[1m]` — hit `qwen3.5:9b`, `claude-haiku-4-5` hits
+`qwen3.5:4b`, each with its registry `num_ctx` applied. The env file also
+presets `ANTHROPIC_MODEL`/`ANTHROPIC_SMALL_FAST_MODEL` so a fresh Claude
+Code session starts on models the gateway serves; if it ever complains
+about a selected model, run `/model` inside Claude Code and pick
+`claude-sonnet-5`. `GET /v1/models` serves the registry for model
+discovery. Verify a running gateway with `./scripts/verify-gateway.sh`.
 
 Temper expectations: a 9B Q4 model is not Sonnet, and nobody here will
 pretend it is. It is, however, free, private, always awake, and incapable

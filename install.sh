@@ -449,6 +449,10 @@ export BROKEMODE_GATEWAY="\${BROKEMODE_GATEWAY:-http://127.0.0.1:9100}"
 # on the real API by default.
 export ANTHROPIC_BASE_URL="\${ANTHROPIC_BASE_URL:-http://127.0.0.1:9100}"
 export ANTHROPIC_AUTH_TOKEN="\${ANTHROPIC_AUTH_TOKEN:-brokemode-local}"
+# Start Claude Code on models this gateway actually serves (aliases from
+# models.yaml) instead of whatever it picked last:
+export ANTHROPIC_MODEL="\${ANTHROPIC_MODEL:-claude-sonnet-5}"
+export ANTHROPIC_SMALL_FAST_MODEL="\${ANTHROPIC_SMALL_FAST_MODEL:-claude-haiku-4-5}"
 EOF
 fi
 
