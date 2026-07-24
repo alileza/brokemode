@@ -247,6 +247,48 @@ ensure_ollama_version() {
 MIN_OLLAMA="$(awk '/^min_ollama_version:/ { gsub(/"/,"",$2); print $2 }' "$MODELS_YAML")"
 ensure_ollama_version "$MIN_OLLAMA"
 
+# upgrade_and_restart_ollama: brew-upgrade the client and bounce the daemon
+# so both report the same version. Returns 1 (with guidance) when brew
+# can't help — e.g. Ollama came from the .app, or brew's bottle still lags.
+upgrade_and_restart_ollama() {
+  if ! brew upgrade ollama; then
+    warn "brew upgrade ollama failed — if Ollama came from the app, download the latest from https://ollama.com/download and re-run this installer"
+    return 1
+  fi
+  brew services restart ollama >/dev/null 2>&1 || brew services start ollama >/dev/null 2>&1 || true
+  local cv sv
+  cv="$(client_version)"
+  sv="$(wait_for_server "$cv" || true)"
+  if [ -n "$cv" ] && [ "$sv" != "$cv" ]; then
+    warn "ollama daemon is v${sv:-not responding} but the client is v$cv — try: brew services restart ollama"
+    return 1
+  fi
+  log "ollama upgraded; client and daemon are v${cv:-unknown}"
+}
+
+# pull_model <name>: ollama pull with live progress, catching the registry's
+# 412 "requires a newer version of Ollama" refusal — that error is the
+# authoritative version signal (newer models raise the bar ahead of any
+# number models.yaml can guess), so offer the upgrade and retry once.
+pull_model() {
+  local name="$1" rc
+  ollama pull "$name" 2>&1 | tee "$WORKDIR/pull.log"
+  rc=${PIPESTATUS[0]}
+  [ "$rc" -eq 0 ] && return 0
+  if grep -qi "requires a newer version of Ollama" "$WORKDIR/pull.log"; then
+    warn "$name needs a newer Ollama than the installed v$(client_version) (the model registry refused the pull)"
+    if confirm "Upgrade ollama via 'brew upgrade ollama' and retry the pull?"; then
+      if upgrade_and_restart_ollama; then
+        ollama pull "$name" && return 0
+        warn "still refused after the brew upgrade — Homebrew's bottle may lag behind; install the latest from https://ollama.com/download, then re-run this installer"
+      fi
+    else
+      warn "skipping $name — upgrade Ollama and re-run this installer to pull it"
+    fi
+  fi
+  return 1
+}
+
 # Parse our (fixed-shape) models.yaml with awk into pipe-separated rows:
 #   name|disk_gb|peak_rss_gb|expected_tps|default
 parse_models() {
@@ -306,6 +348,7 @@ in_only_list() {
 PULLED=""
 SKIPPED_BUDGET=""
 SKIPPED_DISK=""
+SKIPPED_PULL=""
 while IFS='|' read -r name disk rss tps def; do
   [ "$name" = "BUDGET" ] && continue
   if [ -n "$ONLY_MODELS" ]; then
@@ -331,9 +374,16 @@ while IFS='|' read -r name disk rss tps def; do
 
   if [ "$DRY_RUN" -eq 0 ] && ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$name"; then
     log "$name already pulled"
-  else
+  elif [ "$DRY_RUN" -eq 1 ]; then
     log "pulling $name (${disk}GB on disk)"
     run ollama pull "$name"
+  else
+    log "pulling $name (${disk}GB on disk)"
+    if ! pull_model "$name"; then
+      warn "could not pull $name — continuing with the rest"
+      SKIPPED_PULL="$SKIPPED_PULL $name"
+      continue
+    fi
   fi
   PULLED="$PULLED $name"
 done < <(parse_models)
@@ -367,6 +417,7 @@ while IFS='|' read -r name disk rss tps def; do
   case " $PULLED "         in *" $name "*) status="pulled" ;; esac
   case " $SKIPPED_BUDGET " in *" $name "*) status="OVER BUDGET" ;; esac
   case " $SKIPPED_DISK "   in *" $name "*) status="NEEDS DISK" ;; esac
+  case " $SKIPPED_PULL "   in *" $name "*) status="PULL FAILED" ;; esac
   fit="$(fit_of "$rss")"
   marker=""
   [ "$name" = "$FASTEST" ] && marker="  <- fastest"

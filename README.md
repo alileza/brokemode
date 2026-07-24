@@ -220,6 +220,14 @@ headroom, and watch the compressed-pages line in the TUI.
   the daemon), or manually: `brew upgrade ollama && brew services restart
   ollama`. The daemon restart matters: an upgraded CLI with a stale daemon
   is exactly the inconsistency this check exists to catch.
+- **`Error: pull model manifest: 412` / "requires a newer version of
+  Ollama"** — the model registry itself refused the pull; newer models
+  raise the version bar ahead of anything models.yaml can predict. The
+  installer catches this, offers the upgrade, restarts the daemon, and
+  retries the pull. If it still fails after the upgrade, Homebrew's bottle
+  is lagging — install the latest from
+  [ollama.com/download](https://ollama.com/download) and re-run. (Same if
+  Ollama came from the .app instead of brew: `brew upgrade` can't touch it.)
 - **GPU/power columns empty, run marked PARTIAL** — `powermetrics` needs
   root. Run `sudo -v` right before `brokemode bench`, or add a NOPASSWD
   sudoers rule for `/usr/bin/powermetrics`. Everything else still works.
